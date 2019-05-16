@@ -10,6 +10,13 @@ class Instrument():
 	filters - A list of strings of filter names
 	ao_filter - A string that is the filter name for the AO mag
 
+	There will also be a set of "current_setup" properties:
+	self.exposure_time  - The exposure time in seconds [float]
+	self.n_exposures    - The number of exposures [int]
+	self.current_filter - The current filter [string]
+	self.current_R 		- The current resolving power (float)
+	More to come!
+
 	Later we might also have ao_filter2
 
 	The main functions will be: 
@@ -25,7 +32,10 @@ class Instrument():
 		A function that returns the instrument throughput at a given set of wavelengths
 		'''
 
-		pass
+		if isinstance(wvs,float):
+			return 1
+		else:
+			return np.ones(len(wvs))
 
 	def get_filter_transmission(self,wvs,filter_name):
 		'''
@@ -38,7 +48,11 @@ class Instrument():
 
 		# if filter_name not in self.filters:
 			# ERROR
-		pass
+		
+		if isinstance(wvs,float):
+			return 1.
+		else:
+			return np.ones(len(wvs))
 
 	def get_speckle_noise(self,separations,ao_mag,sci_mag,sci_filter,SpT,ao_mag2=None):
 		'''
@@ -71,6 +85,50 @@ class Instrument():
 		Outputs: 
 		backgrounds - a list of background values at a given wavelength. Unit TBD
 		'''
-	
 
+		if isinstance(wvs,float):
+			return 0.
+		else:
+			return np.zeros(len(wvs))
+
+
+class PSI_Blue(Instrument):
+	'''
+	An implementation of Instrument for PSI-Blue
+	'''
+	def __init__(self):
+		super(PSI_Blue,self).__init__()
+
+		# The main instrument properties - static
+		self.read_noise = 1
+		self.filters = ['r','i','z','Y','J','H']
+		self.ao_filter = ['i']
+		self.ao_filter2 = ['H']
+
+		# The current obseving properties - dynamic
+		self.exposure_time = None
+		self.n_exposures = None
+		self.current_filter = None
+		self.current_R = None
+
+	def get_speckle_noise(self,separations,ao_mag,sci_mag,sci_filter,SpT,ao_mag2=None):
+		'''
+		MAX TO FILL IN
+		'''
+
+
+	def set_observing_mode(exposure_time,n_exposures,sci_filter,R):
+		'''
+		Sets the current observing setup
+		'''
+
+		self.exposure_time = exposure_time
+		self.n_exposures = n_exposures
+
+		if sci_filter not in self.filters:
+			raise ValueException("The filter you selected is not valid for PSF_Blue. Check the self.filters property")
+		else:
+			self.current_filter = sci_filter
+
+		self.R = R
 

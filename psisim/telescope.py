@@ -30,10 +30,6 @@ class Telescope():
 		else: 
 			self.collecting_area = np.pi*(self.diameter/2)**2
 
-
-
-
-
 	def get_sky_background(self,wvs):
 		'''
 		A function that returns the sky background for a given set of wavelengths. 
@@ -46,11 +42,11 @@ class Telescope():
 		Outputs: 
 		backgrounds - A list of backgrounds
 		'''
-
-
-		pass #Placeholder
-		#TODO: Raise not implemented exception
-		# return backgrounds
+		
+		if isinstance(wvs,float):
+			return 0
+		else:
+			return np.zeros(len(wvs))
 
 
 	def get_atmospheric_transmission(self,wvs):
@@ -66,11 +62,16 @@ class Telescope():
 		transmissions - A list of atmospheric transmissions
 		'''
 
-
-		pass #Placeholder
-		#TODO: Raise not implemented exception
-		# return transmissions
-
-
+		if isinstance(wvs,float):
+			return 1
+		else:
+			return np.ones(len(wvs))
 
 
+
+class TMT(Telescope):
+	'''
+	An implementation of the Telescope class
+	'''
+	def __init__(self):
+		super(TMT, self).__init__(30)
