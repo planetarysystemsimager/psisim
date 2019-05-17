@@ -17,6 +17,9 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
 	F_lambda, F_lambda_error
 	'''
 
+
+	##### ALL UNITS NEED TO BE PROPERLY EXAMINED #####
+
 	#Some relevant planet properties
 	separation = planet_table_entry['AngSep']
 	star_imag = planet_table_entry['StarImag']
@@ -45,14 +48,14 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
 
 	# Now get the various noise sources: 
 	speckle_noise = instrument.get_speckle_noise(separations,star_imag,
-		instrument.current_filter,wvs,star_spt)
+		instrument.current_filter,wvs,star_spt) #### ALMOST CERTAINLY NOT IN THE CORRECT UNITS. CURRENTLY CONTRAST UNITS NEEDS TO GET TO E-. 
 
 	# Multiply the read noise by sqrt(n_exposures)
 	read_noise = np.sqrt(instrument.n_exposures)*instrument.read_noise
 	
-	#Add the dark_current to the spectrum and calculate dark noise
+	#Add the dark_current to the spectrum and calculate dark noise. NEVERMIND NOT ADDING TO SPECTRUM RIGHT NOW
 	dark_current = instrument.dark_current*instrument.exposure_time
-	detector_spectrum += dark_current
+	# detector_spectrum += dark_current
 	dark_noise = np.sqrt(dark_current)
 
 	#Photon noise. Detector_spectrum should be in total of e- now.

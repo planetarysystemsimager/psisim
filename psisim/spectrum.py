@@ -30,6 +30,11 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
 	F_lambda
 	'''
 
+	if isinstance(wvs,float):
+		return 1
+	else:
+		return np.ones(len(wvs))
+
 	pass
 
 def downsample_spectrum(spectrum,R_in, R_out):
