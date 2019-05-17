@@ -1,5 +1,8 @@
-
-
+import psisim
+import os
+import glob
+import scipy.interpolate as si
+import numpy as np
 
 class Instrument():
 	'''
@@ -9,12 +12,16 @@ class Instrument():
 	read_noise	- The read noise in e-
 	filters - A list of strings of filter names
 	ao_filter - A string that is the filter name for the AO mag
+	gain 	- The detector gain in e-/ADU
+	dark_current - The dark current in e-/sec/pixel
+	qe - quantum efficiency, as a fraction
+	pixel_scale - the size of a pixel in angular units
 
 	There will also be a set of "current_setup" properties:
-	self.exposure_time  - The exposure time in seconds [float]
-	self.n_exposures    - The number of exposures [int]
-	self.current_filter - The current filter [string]
-	self.current_R 		- The current resolving power (float)
+	exposure_time  - The exposure time in seconds [float]
+	n_exposures    - The number of exposures [int]
+	current_filter - The current filter [string]
+	current_R 		- The current resolving power (float)
 	More to come!
 
 	Later we might also have ao_filter2
@@ -25,7 +32,7 @@ class Instrument():
 	'''
 
 	def __init__(self):
-
+		pass
 
 	def get_inst_throughput(self, wvs):
 		'''
@@ -100,10 +107,15 @@ class PSI_Blue(Instrument):
 		super(PSI_Blue,self).__init__()
 
 		# The main instrument properties - static
-		self.read_noise = 1
+		self.read_noise = 0.
+		self.gain = 1. #e-/ADU
+		self.dark_current = 0.
+		self.qe = 1. 
+
 		self.filters = ['r','i','z','Y','J','H']
 		self.ao_filter = ['i']
 		self.ao_filter2 = ['H']
+
 
 		# The current obseving properties - dynamic
 		self.exposure_time = None
@@ -111,10 +123,77 @@ class PSI_Blue(Instrument):
 		self.current_filter = None
 		self.current_R = None
 
-	def get_speckle_noise(self,separations,ao_mag,sci_mag,sci_filter,SpT,ao_mag2=None):
+	def get_speckle_noise(self,separations,ao_mag,sci_mag,wvs,SpT,ao_mag2=None,
+		contrast_dir=None, integrator='si'):
 		'''
-		MAX TO FILL IN
+		Returns the contrast for a given list of separations. 
+		The default is to use the contrasts provided so far by Jared Males
+
+		The code currently rounds to the nearest I mag. This could be improved. 
+
+		TODO: Write down somewhere the file format expected. 
+
+		Inputs: 
+		separations	 - A list of separations at which to calculate the speckle noise [float list length n]
+		ao_mag 		 - The magnitude in the ao band, here assumed to be I-band
+		sci_mag 	 - The magnitude in the science band (do we actually need this?)
+		wvs 		 - A list of wavelengths in microns [float length m]
+
+		Outputs: 
+		get_speckle_noise - Either an array of length [n,1] if only one wavelength passed, or shape [n,m]
+
 		'''
+
+		if contrast_dir is None:
+			contrast_dir = os.path.dirname(psisim.__file__)+"/data/default_contrast/"
+
+		if integrator not in ['si','lp']:
+			raise ValueException("The integrator you've selected is not supported."
+				" We currently only support standard integrator of linear predictor"
+				" as 'si or 'lp")
+
+
+		#Find all the contrast files
+		fnames = glob.glob(contrast_dir+"*"+integrator+"_profile.dat")
+
+		#Extract the magnitudes from the filenames
+		mags = [float(fname.split("/")[-1].split("_")[1]) for fname in fnames]
+
+		#### Make an array to hold the contrast profiles for each magnitude
+		# Assumes that each file has the same number of entries. 
+
+		#Round the host_Imags
+		host_mag = np.around(ao_mag)
+		#Get the file index
+		magnitude_index = np.where(mags == host_mag)[0][0]
+		#Make sure we support it
+		if magnitude_index.shape == 0:
+			raise ValueException("We don't yet support the ao_mag you input. "
+				"We currently support between {} and {}".format(np.min(mags),np.max(mags)))
+
+		#Now read in the correct contrast file
+		contrast_file_contents = np.genfromtxt(fnames[magnitude_index])[:,0:2]
+		seps = contrast_file_contents[:,0]
+		contrasts = contrast_file_contents[:,1]
+
+		#Make an interpolation function
+		contrasts_interp = si.interp1d(seps,contrasts,fill_value='extrapolate')
+		#Interpolate to the desired separations
+		interpolated_contrasts = contrasts_interp(separations)
+
+		### At this point we scale the contrast to the wavelength that we want. 
+		# The contrasts are currently at an I-band 0.8 micron
+		# 
+
+		speckle_noise = np.zeros([np.size(separations),np.size(wvs)])
+
+		if isinstance(wvs,float):
+			wvs = [wvs]
+
+		for i,wv in enumerate(wvs):
+			speckle_noise[:,i] = interpolated_contrasts*(0.8/wv)**2
+
+		return speckle_noise
 
 
 	def set_observing_mode(exposure_time,n_exposures,sci_filter,R):
