@@ -52,7 +52,7 @@ class ExoSims_Universe(Universe):
         flux_ratios = 10**(sim.SimulatedUniverse.dMag/-2.5)  # grab for now from EXOSIMS
         angseps = sim.SimulatedUniverse.WA.value * 1000 # mas
         projaus = sim.SimulatedUniverse.d.value # au
-        phis = sim.SimulatedUniverse.phi # planet phase  [0, 1]
+        phase = np.arccos(sim.SimulatedUniverse.r[:,2]/sim.SimulatedUniverse.d) # planet phase  [0, pi]
         smas = sim.SimulatedUniverse.a.value # au
         eccs = sim.SimulatedUniverse.e # eccentricity
         incs = sim.SimulatedUniverse.I.value # degrees
@@ -84,8 +84,8 @@ class ExoSims_Universe(Universe):
         host_Kmags = np.array([sim.TargetList.Kmag[i] for i in sim.SimulatedUniverse.plan2star])
         
 
-        all_data = [star_names, ras, decs, distances, flux_ratios, angseps, projaus, phis, smas, eccs, incs, masses, radii, spts, host_Bmags, host_Vmags, host_Rmags, host_Imags, host_Jmags, host_Hmags, host_Kmags]
-        labels = ["StarName", "RA", "Dec", "Distance", "Flux Ratio", "AngSep", "ProjAU", "Phi", "SMA", "Ecc", "Inc", "PlanetMass", "PlanetRadius", "StarSpT", "StarBMag", "StarVmag", "StarRmag", "StarImag", "StarJmag", "StarHmag", "StarKmag"]
+        all_data = [star_names, ras, decs, distances, flux_ratios, angseps, projaus, phase, smas, eccs, incs, masses, radii, spts, host_Bmags, host_Vmags, host_Rmags, host_Imags, host_Jmags, host_Hmags, host_Kmags]
+        labels = ["StarName", "RA", "Dec", "Distance", "Flux Ratio", "AngSep", "ProjAU", "Phase", "SMA", "Ecc", "Inc", "PlanetMass", "PlanetRadius", "StarSpT", "StarBMag", "StarVmag", "StarRmag", "StarImag", "StarJmag", "StarHmag", "StarKmag"]
 
         planets_table = Table(all_data, names=labels)
 
