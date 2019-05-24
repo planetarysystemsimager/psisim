@@ -42,7 +42,7 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True):
         # use Jupiter cloud deck for now. 
         params.clouds( filename= jdi.jupiter_cld(), delim_whitespace=True)
 
-    return params
+    return (params, opacity)
 
 def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, package="picaso"):
     '''
@@ -58,19 +58,23 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
     Outputs:
     F_lambda
     '''
-    opacity = jdi.opannection()
-    model_wnos, model_alb = atmospheric_parameters.spectrum(opacity)
-    model_wvs = 1./model_wnos * 1e4 # microns
+    if package.lower() == "picaso":
+        params, opacity = atmospheric_parameters
+        model_wnos, model_alb = params.spectrum(opacity)
+        model_wvs = 1./model_wnos * 1e4 # microns
 
-    model_dwvs = np.abs(model_wvs - np.roll(model_wvs, 1))
-    model_dwvs[0] = model_dwvs[1]
-    model_R = model_wvs/model_dwvs
+        model_dwvs = np.abs(model_wvs - np.roll(model_wvs, 1))
+        model_dwvs[0] = model_dwvs[1]
+        model_R = model_wvs/model_dwvs
 
-    highres_fp =  model_alb * (planet_table_entry['PlanetRadius']*u.earthRad.to(u.au)/planet_table_entry['SMA'])**2 # flux ratio relative to host star
+        highres_fp =  model_alb * (planet_table_entry['PlanetRadius']*u.earthRad.to(u.au)/planet_table_entry['SMA'])**2 # flux ratio relative to host star
 
-    lowres_fp = downsample_spectrum(highres_fp, np.mean(model_R), R)
+        lowres_fp = downsample_spectrum(highres_fp, np.mean(model_R), R)
 
-    fp = np.interp(wvs, model_wvs, lowres_fp)
+        fp = np.interp(wvs, model_wvs, lowres_fp)
+
+    elif package.lower() == "hotstart":
+        pass
 
     return fp
 
