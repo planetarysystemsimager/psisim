@@ -196,7 +196,7 @@ class PSI_Blue(Instrument):
 		return speckle_noise
 
 
-	def set_observing_mode(exposure_time,n_exposures,sci_filter,R):
+	def set_observing_mode(self,exposure_time,n_exposures,sci_filter,R):
 		'''
 		Sets the current observing setup
 		'''
@@ -209,5 +209,5 @@ class PSI_Blue(Instrument):
 		else:
 			self.current_filter = sci_filter
 
-		self.R = R
+		self.current_R = R
 

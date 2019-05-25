@@ -1,8 +1,13 @@
+import os
+import psisim
 import numpy as np
 import scipy.ndimage as ndi
 import astropy.units as u
 import picaso
 from picaso import justdoit as jdi
+from astropy.io import fits
+import pysynphot as ps
+import scipy.interpolate as si
 
 def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True):
     '''
@@ -71,7 +76,9 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
 
         lowres_fp = downsample_spectrum(highres_fp, np.mean(model_R), R)
 
-        fp = np.interp(wvs, model_wvs, lowres_fp)
+        argsort = np.argsort(model_wvs)
+
+        fp = np.interp(wvs, model_wvs[argsort], lowres_fp[argsort])
 
     elif package.lower() == "hotstart":
         pass
@@ -96,3 +103,91 @@ def downsample_spectrum(spectrum,R_in, R_out):
     new_spectrum = ndi.gaussian_filter(spectrum, sigma)
 
     return new_spectrum
+
+
+def get_stellar_spectrum(planet_table_entry,wvs,R,model='pickles',verbose=False):
+    ''' 
+    A function that returns the stellar spectrum for a given spectral type
+
+    Inputs: 
+    planet_table_entry - An entry from a Universe Planet Table
+    wvs - The wavelengths at which you want the spectrum. Can be an array [microns]
+    R   - The spectral resolving power that you want [int or float]
+    Model - The stellar spectrum moodels that you want. [string]
+
+    Outputs:
+     spectrum - returns the stellar spectrum at the desired wavelengths 
+                [photons/s/cm^2/A]
+    '''
+
+    if model == 'pickles':
+
+        #Get the pickles spectrum in units of photons/s/cm^2/angstrom. 
+        #Wavelength units are microns
+        sp = get_pickles_spectrum(planet_table_entry['StarSpT'],verbose=verbose)
+        
+        #pysynphot  Normalizes everthing to have Vmag = 0, so we'll scale the
+        #stellar spectrum by the Vmag
+        starVmag = planet_table_entry['StarVmag']
+        scaling_factor = 10**(starVmag/-2.5)
+        full_stellar_spectrum = sp.flux*scaling_factor
+
+
+        stellar_spectrum = []
+
+        #If wvs is a float then make it a list for the for loop
+        if isinstance(wvs,float):
+            wvs = [wvs]
+
+        #Now get the spectrum!
+        for wv in wvs: 
+            #Wavelength sampling of the pickles models is at 5 angstrom
+            R_in = wv/0.0005
+            #Down-sample the spectrum to the desired wavelength
+            ds = downsample_spectrum(full_stellar_spectrum,R_in,R)
+            #Interpolate the spectrum to the wavelength we want
+            stellar_spectrum.append(si.interp1d(sp.wave,ds)(wv))
+        stellar_spectrum = np.array(stellar_spectrum)
+    else:
+        if verbose:
+            print("We only support 'pickles' models for now")
+        return -1
+
+    return stellar_spectrum
+
+
+def get_pickles_spectrum(spt,verbose=False):
+    '''
+    A function that retuns a pysynphot pickles spectrum for a given spectral type
+    '''
+
+    #Read in the pickles master list. 
+    pickles_dir = os.environ['PYSYN_CDBS']+"grid/pickles/dat_uvk/"
+    pickles_filename = pickles_dir+"pickles_uk.fits"
+    pickles_table = np.array(fits.open(pickles_filename)[1].data)
+    pickles_filenames = [x[0].decode().replace(" ","") for x in pickles_table]
+    pickles_spts = [x[1].decode().replace(" ","") for x in pickles_table]
+    
+    #The spectral types output by EXOSIMS are sometimes annoying
+    spt = spt.replace(" ","").split("/")[-1]
+
+    #Sometimes there are fractional spectral types. Rounding to nearest integer
+    spt_split = spt.split(".")
+    if np.size(spt_split) > 1: 
+        spt = spt_split[0] + spt_split[1][1:]
+
+    #Get the index of the relevant pickles spectrum filename
+    try: 
+        ind = pickles_spts.index(spt)
+    except: 
+        if verbose:
+            print("Couldn't match spectral type {} to the pickles library".format(spt))
+            print("Assuming 'G0V'")
+        ind = pickles_spts.index('G0V')
+
+    sp = ps.FileSpectrum(pickles_dir+pickles_filenames[ind]+".fits")
+    sp.convert("Micron")
+    sp.convert("photlam")
+    
+    return sp
+

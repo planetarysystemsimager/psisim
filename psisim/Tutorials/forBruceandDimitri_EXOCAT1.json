@@ -1,0 +1,60 @@
+{
+  "missionLife": 5,
+  "missionPortion": 0.0493150685,
+  "staticStars": true,
+  "checkKeepoutEnd": true,
+  "pupilDiam": 2.37,
+  "obscurFac": 0.1724,
+  "intCutoff": 30,
+  "ppFact": 0.1,
+  "ref_dMag": 3,
+  "ref_Time": 0.2,
+  "WAint":0.3,
+  "minComp": 0,
+  "dMagLim": 22.5,
+  "dMagint": 22.5,
+  "settlingTime": 0.5, 
+  "arange":[0.1,30],
+  "scienceInstruments": [
+    { "name": "imager"
+    },
+    { "name": "spectro"
+    }
+  ],
+  "starlightSuppressionSystems": [
+    { "name": "HLC-565",
+      "IWA": 0
+    },
+    { "name": "SPC-660",
+      "IWA": 0.19
+    }
+  ],
+  "observingModes": [
+    { "instName": "imager",
+      "systName": "HLC-565",
+      "detectionMode": true,
+      "SNR": 5
+    },
+    { "instName": "spectro",
+      "systName": "SPC-660",
+      "lam": 660,
+      "SNR": 10
+    }
+  ],
+  "modules": {
+    "PlanetPopulation": "SAG13",
+    "StarCatalog": "EXOCAT1",
+    "OpticalSystem": "Nemati",
+    "ZodiacalLight": "Stark",
+    "BackgroundSources": " ",
+    "PlanetPhysicalModel": "Forecaster",
+    "Observatory": "",
+    "TimeKeeping": " ",
+    "PostProcessing": " ",
+    "Completeness": " ",
+    "TargetList": " ",
+    "SimulatedUniverse": "SAG13Universe",
+    "SurveySimulation": " ",
+    "SurveyEnsemble": " "
+  }
+}
