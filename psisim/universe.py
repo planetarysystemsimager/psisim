@@ -59,7 +59,7 @@ class ExoSims_Universe(Universe):
         masses = sim.SimulatedUniverse.Mp.value # earth masses
         radii = sim.SimulatedUniverse.Rp.value # earth radii
 
-        import pdb; pdb.set_trace()
+
         # stellar properties
         ras = [] # deg
         decs = [] # deg
