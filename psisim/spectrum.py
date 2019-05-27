@@ -1,13 +1,22 @@
 import os
+import glob
 import psisim
 import numpy as np
 import scipy.ndimage as ndi
 import astropy.units as u
 import picaso
 from picaso import justdoit as jdi
-from astropy.io import fits
+from astropy.io import fits, ascii
 import pysynphot as ps
 import scipy.interpolate as si
+
+
+bex_labels = ['Age', 'Mass', 'Radius', 'Luminosity', 'Teff', 'Logg', 'NACOJ', 'NACOH', 'NACOKs', 'NACOLp', 'NACOMp', 'CousinsR', 'CousinsI', 'WISE1', 'WISE2', 'WISE3', 'WISE4', 
+              'F115W', 'F150W', 'F200W', 'F277W', 'F356W', 'F444W', 'F560W', 'F770W', 'F1000W', 'F1280W', 'F1500W', 'F1800W', 'F2100W', 'F2550W', 'VISIRB87', 'VISIRSiC', 
+              'SPHEREY', 'SPHEREJ', 'SPHEREH', 'SPHEREKs', 'SPHEREJ2', 'SPHEREJ3', 'SPHEREH2', 'SPHEREH3', 'SPHEREK1', 'SPHEREK2']
+# initalize on demand when needed
+bex_cloudy_mh0 = {}
+bex_clear_mh0 = {}
 
 def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True):
     '''
@@ -77,8 +86,63 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
 
         fp = np.interp(wvs, model_wvs[argsort], lowres_fp[argsort])
 
-    elif package.lower() == "hotstart":
-        pass
+    elif package.lower() == "bex-cooling":
+        age, band, cloudy = atmospheric_parameters # age in years, band is 'R', 'I', 'J', 'H', 'K', cloudy is True/False
+        
+        if len(bex_cloudy_mh0) == 0:
+            # need to load in models. first time using
+            load_bex_models()
+        
+        if cloudy:
+            bex_grid = bex_cloudy_mh0
+        else:
+            bex_grid = bex_clear_mh0
+
+        masses = np.array(list(bex_grid.keys()))
+        closest_indices = np.argsort(np.abs(masses - planet_table_entry['PlanetMass']))
+        
+        mass1 = masses[closest_indices[0]]
+        mass2 = masses[closest_indices[1]]
+
+        curve1 = bex_grid[mass1]
+        curve2 = bex_grid[mass2]
+
+        if band == 'R':
+            bexlabel = 'CousinsR'
+            starlabel = 'StarRmag'
+        elif band == 'I':
+            bexlabel = 'CousinsI'
+            starlabel = 'StarImag'
+        elif band == 'J':
+            bexlabel = 'SPHEREJ'
+            starlabel = 'StarJmag'
+        elif band == 'H':
+            bexlabel = 'SPHEREH'
+            starlabel = 'StarHmag'
+        elif band == 'K':
+            bexlabel = 'SPHEREKs'
+            starlabel = 'StarKmag'
+        else:
+            raise ValueError("Band needs to be 'R', 'I', 'J', 'H', 'K'. Got {0}.".format(band))
+
+        logage = np.log10(age)
+
+        # linear interolation in log Age
+        fp1 = np.interp(logage, curve1['Age'], curve1[bexlabel]) # magnitude
+        fp2 = np.interp(logage, curve2['Age'], curve2[bexlabel]) # magnitude
+
+        # linear interpolate in log Mass
+        fp = np.interp(np.log10(planet_table_entry['PlanetMass']), np.log10([mass1, mass2]), [fp1, fp2]) # magnitude
+        # correct for distance
+        fp = fp - 5 * np.log10(planet_table_entry['Distance']/10)
+
+        fs = planet_table_entry[starlabel] # magnitude
+
+        fp = 10**(-(fp - fs)/2.5) # flux ratio of planet to star
+
+        # return as many array elements with save planet flux if multiple are requested (we don't have specetral information)
+        if not isinstance(wvs, (float,int)):
+            fp = np.ones(wvs.shape) * fp
 
     return fp
 
@@ -188,3 +252,25 @@ def get_pickles_spectrum(spt,verbose=False):
     
     return sp
 
+def load_bex_models():
+    """
+    Helper function to load in BEX Cooling curves as dictionary of astropy tables on demand
+
+    Saves to global variables bex_cloudy_mh0 and bex_clear_mh0
+
+    """
+    # get relevant files for interpolatoin
+    package_dir = os.path.dirname(__file__)
+    bex_dir = os.path.join(package_dir, 'data', 'bex_cooling')
+    # grabbing 0 metalicity grid for now
+    cloudy_pattern = "BEX_evol_mags_-2_MH_0.00_fsed_1.00_ME_*.dat"
+    clear_pattern = "BEX_evol_mags_-2_MH_0.00_ME_*.dat"
+
+    for bex_dict, pattern in zip([bex_clear_mh0, bex_cloudy_mh0], [clear_pattern, cloudy_pattern]):
+        grid_files = glob.glob(os.path.join(bex_dir, pattern))
+        grid_files.sort()
+        # grab masses from filenames
+        masses = [float(path.split("_")[-1][:-4]) for path in grid_files]
+        for mass, filename in zip(masses, grid_files):
+            dat = ascii.read(filename, names=bex_labels)
+            bex_dict[mass] = dat
