@@ -1,4 +1,6 @@
 import numpy as np
+import astropy.units as u
+import astropy.constants as constants
 from astropy.table import Table
 import EXOSIMS.MissionSim
 
@@ -58,7 +60,8 @@ class ExoSims_Universe(Universe):
         incs = sim.SimulatedUniverse.I.value # degrees
         masses = sim.SimulatedUniverse.Mp.value # earth masses
         radii = sim.SimulatedUniverse.Rp.value # earth radii
-
+        grav = constants.G * (masses * u.earthMass)/(radii * u.earthRad)**2
+        logg = np.log10(grav.to(u.cm/u.s**2).value) # logg cgs
 
         # stellar properties
         ras = [] # deg
@@ -74,8 +77,9 @@ class ExoSims_Universe(Universe):
         distances = np.array(distances)
         star_names =  np.array([sim.TargetList.Name[i] for i in sim.SimulatedUniverse.plan2star])
         spts = np.array([sim.TargetList.Spec[i] for i in sim.SimulatedUniverse.plan2star])
-        host_mass = np.array([sim.TargetList.stellar_mass[i] for i in sim.SimulatedUniverse.plan2star])
-        host_teff = np.array([sim.TargetList.stellarTeff[i] for i in sim.SimulatedUniverse.plan2star])
+        sim.TargetList.stellar_mass() # generate masses if haven't
+        host_mass = np.array([sim.TargetList.MsTrue[i].value for i in sim.SimulatedUniverse.plan2star])
+        host_teff = sim.TargetList.stellarTeff(sim.SimulatedUniverse.plan2star).value
         # stellar photometry
         host_Bmags = np.array([sim.TargetList.Bmag[i] for i in sim.SimulatedUniverse.plan2star])
         host_Vmags = np.array([sim.TargetList.Vmag[i] for i in sim.SimulatedUniverse.plan2star])
@@ -85,9 +89,15 @@ class ExoSims_Universe(Universe):
         host_Hmags = np.array([sim.TargetList.Hmag[i] for i in sim.SimulatedUniverse.plan2star])
         host_Kmags = np.array([sim.TargetList.Kmag[i] for i in sim.SimulatedUniverse.plan2star])
         
+        # guess the radius and gravity from Vmag and Teff. This is of questionable reliability
+        host_MVs = host_Vmags - 5 * np.log10(distances/10) # absolute V mag
+        host_lums = 10**(-(host_MVs-4.83)/2.5) # L/Lsun
+        host_radii = (5800/host_teff)**2 * np.sqrt(host_lums) # Rsun
+        host_gravs = constants.G * (host_mass * u.solMass)/(host_radii * u.solRad)**2
+        host_logg = np.log10(host_gravs.to(u.cm/u.s**2).value) # logg cgs
 
-        all_data = [star_names, ras, decs, distances, flux_ratios, angseps, projaus, phase, smas, eccs, incs, masses, radii, spts, host_mass, host_teff, host_Bmags, host_Vmags, host_Rmags, host_Imags, host_Jmags, host_Hmags, host_Kmags]
-        labels = ["StarName", "RA", "Dec", "Distance", "Flux Ratio", "AngSep", "ProjAU", "Phase", "SMA", "Ecc", "Inc", "PlanetMass", "PlanetRadius", "StarSpT", "StarMass", "StarTeff", "StarBMag", "StarVmag", "StarRmag", "StarImag", "StarJmag", "StarHmag", "StarKmag"]
+        all_data = [star_names, ras, decs, distances, flux_ratios, angseps, projaus, phase, smas, eccs, incs, masses, radii, logg, spts, host_mass, host_teff, host_radii, host_logg, host_Bmags, host_Vmags, host_Rmags, host_Imags, host_Jmags, host_Hmags, host_Kmags]
+        labels = ["StarName", "RA", "Dec", "Distance", "Flux Ratio", "AngSep", "ProjAU", "Phase", "SMA", "Ecc", "Inc", "PlanetMass", "PlanetRadius", "PlanetLogg", "StarSpT", "StarMass", "StarTeff", "StarRad", "StarLogg", "StarBMag", "StarVmag", "StarRmag", "StarImag", "StarJmag", "StarHmag", "StarKmag"]
 
         planets_table = Table(all_data, names=labels)
 

@@ -31,13 +31,10 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True):
     params.phase_angle(planet_table_entry['Phase']) #radians
 
     #define gravity
-    # TODO: calculate from mass/radius
-    params.gravity(gravity=25, gravity_unit=u.Unit('m/(s**2)')) #any astropy units available
+    params.gravity(gravity=10**planet_table_entry['PlanetLogg'], gravity_unit=u.Unit('cm/(s**2)')) #any astropy units available
 
     #define star
-    # TODO: make this not a random hard coded number
-    # Need to convert SpT to temperature and gravity (assume Main sequence)
-    params.star(opacity, 5000,0,4.0) #opacity db, pysynphot database, temp, metallicity, logg
+    params.star(opacity, planet_table_entry['StarTeff'], 0, planet_table_entry['StarLogg']) #opacity db, pysynphot database, temp, metallicity, logg
 
     # define atmosphere PT profile and mixing ratios. 
     # Hard coded as Jupiters right now. 
