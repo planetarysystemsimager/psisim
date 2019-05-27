@@ -40,7 +40,7 @@ class ExoSims_Universe(Universe):
         super(ExoSims_Universe, self).__init__()
         
         self.filename = exosims_config_filename
-        self.planet_table = None
+        self.planets = None
 
     def simulate_EXOSIMS_Universe(self):
         '''
@@ -59,7 +59,7 @@ class ExoSims_Universe(Universe):
         masses = sim.SimulatedUniverse.Mp.value # earth masses
         radii = sim.SimulatedUniverse.Rp.value # earth radii
 
-
+        import pdb; pdb.set_trace()
         # stellar properties
         ras = [] # deg
         decs = [] # deg
@@ -74,6 +74,8 @@ class ExoSims_Universe(Universe):
         distances = np.array(distances)
         star_names =  np.array([sim.TargetList.Name[i] for i in sim.SimulatedUniverse.plan2star])
         spts = np.array([sim.TargetList.Spec[i] for i in sim.SimulatedUniverse.plan2star])
+        host_mass = np.array([sim.TargetList.stellar_mass[i] for i in sim.SimulatedUniverse.plan2star])
+        host_teff = np.array([sim.TargetList.stellarTeff[i] for i in sim.SimulatedUniverse.plan2star])
         # stellar photometry
         host_Bmags = np.array([sim.TargetList.Bmag[i] for i in sim.SimulatedUniverse.plan2star])
         host_Vmags = np.array([sim.TargetList.Vmag[i] for i in sim.SimulatedUniverse.plan2star])
@@ -84,8 +86,8 @@ class ExoSims_Universe(Universe):
         host_Kmags = np.array([sim.TargetList.Kmag[i] for i in sim.SimulatedUniverse.plan2star])
         
 
-        all_data = [star_names, ras, decs, distances, flux_ratios, angseps, projaus, phase, smas, eccs, incs, masses, radii, spts, host_Bmags, host_Vmags, host_Rmags, host_Imags, host_Jmags, host_Hmags, host_Kmags]
-        labels = ["StarName", "RA", "Dec", "Distance", "Flux Ratio", "AngSep", "ProjAU", "Phase", "SMA", "Ecc", "Inc", "PlanetMass", "PlanetRadius", "StarSpT", "StarBMag", "StarVmag", "StarRmag", "StarImag", "StarJmag", "StarHmag", "StarKmag"]
+        all_data = [star_names, ras, decs, distances, flux_ratios, angseps, projaus, phase, smas, eccs, incs, masses, radii, spts, host_mass, host_teff, host_Bmags, host_Vmags, host_Rmags, host_Imags, host_Jmags, host_Hmags, host_Kmags]
+        labels = ["StarName", "RA", "Dec", "Distance", "Flux Ratio", "AngSep", "ProjAU", "Phase", "SMA", "Ecc", "Inc", "PlanetMass", "PlanetRadius", "StarSpT", "StarMass", "StarTeff", "StarBMag", "StarVmag", "StarRmag", "StarImag", "StarJmag", "StarHmag", "StarKmag"]
 
         planets_table = Table(all_data, names=labels)
 
