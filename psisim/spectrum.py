@@ -134,7 +134,7 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         # linear interpolate in log Mass
         fp = np.interp(np.log10(planet_table_entry['PlanetMass']), np.log10([mass1, mass2]), [fp1, fp2]) # magnitude
         # correct for distance
-        fp = fp - 5 * np.log10(planet_table_entry['Distance']/10)
+        fp = fp + 5 * np.log10(planet_table_entry['Distance']/10)
 
         fs = planet_table_entry[starlabel] # magnitude
 

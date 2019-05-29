@@ -2,147 +2,168 @@
 import pysynphot as psyn
 from psisim import spectrum
 import numpy as np
+import scipy.interpolate as si
+import scipy.integrate as integrate
 
-def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum,wvs,
-	inject_noise=True,verbose=False,post_processing_gain = 10):
-	'''
-	A function that simulates an observation
+def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum,wvs,spectrum_R,
+    inject_noise=True,verbose=False,post_processing_gain = 10):
+    '''
+    A function that simulates an observation
 
-	Inputs:
-	Telescope	 - A Telescope object
-	Instrument	 - An Instrument object
-	planet_table_entry - an entry/row from a Universe planet table
-	planet_spectrum - A planet spectrum from simulate spectrum given in contrast units
-	observing_configs - To be defined
+    Inputs:
+    Telescope     - A Telescope object
+    Instrument     - An Instrument object
+    planet_table_entry - an entry/row from a Universe planet table
+    planet_spectrum - A planet spectrum from simulate spectrum given in contrast units
+    observing_configs - To be defined
 
-	Outputs: 
-	F_lambda, F_lambda_error
-	'''
+    Outputs: 
+    F_lambda, F_lambda_error
+    '''
 
 
-	##### ALL UNITS NEED TO BE PROPERLY EXAMINED #####
+    ##### ALL UNITS NEED TO BE PROPERLY EXAMINED #####
 
-	#Some relevant planet properties
-	separation = planet_table_entry['AngSep']
-	star_imag = planet_table_entry['StarImag']
-	star_spt = planet_table_entry['StarSpT']
+    #Some relevant planet properties
+    separation = planet_table_entry['AngSep']
+    star_imag = planet_table_entry['StarImag']
+    star_spt = planet_table_entry['StarSpT']
 
-	#Get the stellar spectrum at the wavelengths of interest. 
-	#The stellar spectrum will be in units of photons/s/cm^2/angstrom
-	stellar_spectrum = spectrum.get_stellar_spectrum(planet_table_entry,wvs,instrument.current_R,
-		model='pickles',verbose=verbose)
+    #Get the stellar spectrum at the wavelengths of interest. 
+    #The stellar spectrum will be in units of photons/s/cm^2/angstrom
+    stellar_spectrum = spectrum.get_stellar_spectrum(planet_table_entry,wvs,instrument.current_R,
+        model='pickles',verbose=verbose)
 
-	#Multiply the stellar spectrum by the collecting area and a factor of 10,000
-	#to convert from m^2 to cm^2 and get the stellar spectrum in units of photons/s
-	stellar_spectrum *= telescope.collecting_area*10000 # A factor of 10000 to convert the tles
+    #Multiply the stellar spectrum by the collecting area and a factor of 10,000
+    #to convert from m^2 to cm^2 and get the stellar spectrum in units of photons/s
+    stellar_spectrum *= telescope.collecting_area*10000 # A factor of 10000 to convert the tles
 
-	#Now let's put the planet spectrum back into physical units
-	#This assumes that you have properly carried around 'wvs' 
-	#and that the planet_spectrum is given at the wvs wavelengths. 
-	scaled_spectrum = planet_spectrum*stellar_spectrum
+    #Multiply by atmospheric transmission
+    stellar_spectrum *= telescope.get_atmospheric_transmission(wvs)
 
-	#Multiply by instrument throughputs
-	detector_spectrum = scaled_spectrum*instrument.get_inst_throughput(wvs)
-	detector_spectrum *= instrument.get_filter_transmission(wvs,instrument.current_filter)
+    #Multiply by spectral channel size
+    stellar_spectrum *= (instrument.current_R * wvs) * 1e4
 
-	# TODO: Convert to photons/s. Presumably the specutrum is in W/m^2 or something 
-	# and needs to be converted
+    #Multiply by instrument throughputs
+    stellar_spectrum *= instrument.get_inst_throughput(wvs)
+    stellar_spectrum *= instrument.get_filter_transmission(wvs,instrument.current_filter)
 
-	#Multiply by the quantum efficiency
-	detector_spectrum *= instrument.qe
+    #Multiply by the quantum efficiency
+    stellar_spectrum *= instrument.qe
 
-	#Multiply by the exposure time
-	detector_spectrum *= instrument.exposure_time #The detector spectrum is now in e-
+    #Now let's put the planet spectrum back into physical units
+    #This assumes that you have properly carried around 'wvs' 
+    #and that the planet_spectrum is given at the wvs wavelengths. 
+    scaled_spectrum = planet_spectrum*stellar_spectrum
 
-	#Multiply by the number of exposures
-	detector_spectrum *= instrument.n_exposures
+    #Downsample to instrument wavelength sampling
+    detector_spectrum = []
+    detector_stellar_spectrum = []
+    intermediate_spectrum = si.interp1d(wvs, planet_spectrum)
+    intermediate_stellar_spectrum = si.interp1d(wvs, stellar_spectrum)
+    for inst_wv, inst_dwv in zip(instrument.current_wvs, instrument.current_dwvs):
+        wv_start = inst_wv - inst_dwv/2.
+        wv_end = inst_wv + inst_dwv/2.
 
-	########################################
-	##### Now get the various noise sources:
+        flux = integrate.quad(intermediate_spectrum, wv_start, wv_end) # detector spectrum now in e-/s
+        stellar_flux = integrate.quad(intermediate_stellar_spectrum, wv_start, wv_end) # detector spectrum now in e-/s
+        detector_spectrum.append(flux)
+        detector_stellar_spectrum.append(stellar_flux)
 
-	speckle_noise,read_noise,dark_noise,photon_noise = get_noise_components(separation,star_imag,instrument,wvs,star_spt,stellar_spectrum,detector_spectrum)
+    detector_spectrum = np.array(detector_spectrum)
+    detector_stellar_spectrum = np.array(detector_stellar_spectrum)
 
-	#Apply a post-processing gain
-	speckle_noise /= post_processing_gain
+    #Multiply by the exposure time
+    detector_spectrum *= instrument.exposure_time #The detector spectrum is now in e-
+    detector_stellar_spectrum *= instrument.exposure_time #The detector spectrum is now in e-
 
-	## Sum it all up
-	total_noise = np.sqrt(speckle_noise**2+read_noise**2+dark_noise**2+photon_noise**2)
+    #Multiply by the number of exposures
+    detector_spectrum *= instrument.n_exposures
+    detector_stellar_spectrum *= instrument.n_exposures
 
-	# Inject noise into spectrum
-	if inject_noise:
-		# For each point in the spectrum, draw from a normal distribution,
-		# with a mean centered on the spectrum and the standard deviation
-		# equal to the noise
-		for i,noise in enumerate(total_noise):
-			# import pdb; pdb.set_trace()
-			detector_spectrum[i] = np.random.normal(detector_spectrum[i],noise)
+    ########################################
+    ##### Now get the various noise sources:
 
-	#TODO: Currently everything is in e-. We likely want it in a different unit at the end. 
+    speckle_noise,read_noise,dark_noise,photon_noise = get_noise_components(separation,star_imag,instrument,wvs,star_spt,detector_stellar_spectrum,detector_spectrum)
 
-	return detector_spectrum, total_noise
+    #Apply a post-processing gain
+    speckle_noise /= post_processing_gain
+
+    ## Sum it all up
+    total_noise = np.sqrt(speckle_noise**2+read_noise**2+dark_noise**2+photon_noise**2)
+
+    # Inject noise into spectrum
+    if inject_noise:
+        # For each point in the spectrum, draw from a normal distribution,
+        # with a mean centered on the spectrum and the standard deviation
+        # equal to the noise
+        for i,noise in enumerate(total_noise):
+            # import pdb; pdb.set_trace()
+            detector_spectrum[i] = np.random.normal(detector_spectrum[i],noise)
+
+    #TODO: Currently everything is in e-. We likely want it in a different unit at the end. 
+
+    return detector_spectrum, total_noise
 
 def get_noise_components(separation,star_imag,instrument,wvs,star_spt,stellar_spectrum,detector_spectrum):
-	'''
-	Calculate all of the different noise contributions
-	'''
+    '''
+    Calculate all of the different noise contributions
+    '''
 
-	#### TODO include photon noise from the speckles
-	
-	# First is speckle noise.
-	# Instrument.get_speckle_noise should return things in contrast units relative to the star
-	speckle_noise = instrument.get_speckle_noise(separation,star_imag,instrument.current_filter,wvs,star_spt)[0]
+    #### TODO include photon noise from the speckles
+    
+    # First is speckle noise.
+    # Instrument.get_speckle_noise should return things in contrast units relative to the star
+    speckle_noise = instrument.get_speckle_noise(separation,star_imag,instrument.current_filter,wvs,star_spt)[0]
 
-	#Convert the speckle noise to photons/s
-	speckle_noise *= stellar_spectrum 
-	#Multiply by all the throughputs, efficiencies and exposure times. 
-	speckle_noise *= instrument.get_inst_throughput(wvs)*instrument.get_filter_transmission(wvs,instrument.current_filter)
-	speckle_noise *= instrument.qe*instrument.exposure_time*instrument.n_exposures
+    #Convert the speckle noise to photons
+    speckle_noise *= stellar_spectrum 
 
-	# Multiply the read noise by sqrt(n_exposures)
-	read_noise = np.sqrt(instrument.n_exposures)*instrument.read_noise
-	
-	#Add the dark_current to the spectrum and calculate dark noise. NEVERMIND NOT ADDING TO SPECTRUM RIGHT NOW
-	dark_current = instrument.dark_current*instrument.exposure_time
-	# detector_spectrum += dark_current
-	dark_noise = np.sqrt(dark_current)
+    # Multiply the read noise by sqrt(n_exposures)
+    read_noise = np.sqrt(instrument.n_exposures)*instrument.read_noise
+    
+    #Add the dark_current to the spectrum and calculate dark noise. NEVERMIND NOT ADDING TO SPECTRUM RIGHT NOW
+    dark_current = instrument.dark_current*instrument.exposure_time*instrument.n_exposures
+    # detector_spectrum += dark_current
+    dark_noise = np.sqrt(dark_current)
 
-	#Photon noise. Detector_spectrum should be in total of e- now.
-	photon_noise = np.sqrt(detector_spectrum)
+    #Photon noise. Detector_spectrum should be in total of e- now.
+    photon_noise = np.sqrt(detector_spectrum)
 
-	return speckle_noise,read_noise,dark_noise,photon_noise
+    return speckle_noise,read_noise,dark_noise,photon_noise
 
-def simulate_observation_set(telescope, instrument, planet_table,planet_spectra,wvs,inject_noise=False,
-	post_processing_gain=10):
-	'''
-	Simulates observations of multiple planets, with the same observing configs
-	
-	Inputs:
-	Telescope	 - A Telescope object
-	Instrument	 - An Instrument object
-	planet_table - a Universe planet table
-	planet_spectra_list - A list of planet spectra. One for each entry in the planet table
-	inject_noise - choose whether or not to inject noise into the spectrum now or not
+def simulate_observation_set(telescope, instrument, planet_table,planet_spectra,wvs,spectra_R,inject_noise=False,
+    post_processing_gain=10):
+    '''
+    Simulates observations of multiple planets, with the same observing configs
+    
+    Inputs:
+    Telescope     - A Telescope object
+    Instrument     - An Instrument object
+    planet_table - a Universe planet table
+    planet_spectra_list - A list of planet spectra. One for each entry in the planet table
+    inject_noise - choose whether or not to inject noise into the spectrum now or not
 
 
-	Outputs: 
-	F_lambdas, F_lambda_errors
-	'''
+    Outputs: 
+    F_lambdas, F_lambda_errors
+    '''
 
-	n_planets = np.size(planet_table) #Not sure this will work
+    n_planets = np.size(planet_table) #Not sure this will work
 
-	F_lambdas = []
-	F_lambda_errors = []
+    F_lambdas = []
+    F_lambda_errors = []
 
-	for i,planet in enumerate(planet_table):
-		new_F_lambda,new_F_lambda_errors = simulate_observation(telescope,instrument,
-			planet,planet_spectra[i],wvs,inject_noise = inject_noise, post_processing_gain=post_processing_gain)
-		F_lambdas.append(new_F_lambda)
-		F_lambda_errors.append(new_F_lambda_errors)
+    for i,planet in enumerate(planet_table):
+        new_F_lambda,new_F_lambda_errors = simulate_observation(telescope,instrument,
+            planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing_gain)
+        F_lambdas.append(new_F_lambda)
+        F_lambda_errors.append(new_F_lambda_errors)
 
-	F_lambdas = np.array(F_lambdas)
-	F_lambda_errors = np.array(F_lambda_errors)
+    F_lambdas = np.array(F_lambdas)
+    F_lambda_errors = np.array(F_lambda_errors)
 
-	return F_lambdas,F_lambda_errors
+    return F_lambdas,F_lambda_errors
 
 
 
