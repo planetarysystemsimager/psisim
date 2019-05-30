@@ -42,8 +42,13 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True):
     #define gravity
     params.gravity(gravity=10**planet_table_entry['PlanetLogg'], gravity_unit=u.Unit('cm/(s**2)')) #any astropy units available
 
+    #The current stellar models do not like log g > 5, so we'll force it here for now. 
+    star_logG = planet_table_entry['StarLogg']
+    if star_logG > 5.0:
+        star_logG = 5.0
+        
     #define star
-    params.star(opacity, planet_table_entry['StarTeff'], 0, planet_table_entry['StarLogg']) #opacity db, pysynphot database, temp, metallicity, logg
+    params.star(opacity, planet_table_entry['StarTeff'], 0, star_logG) #opacity db, pysynphot database, temp, metallicity, logg
 
     # define atmosphere PT profile and mixing ratios. 
     # Hard coded as Jupiters right now. 
