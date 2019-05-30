@@ -18,6 +18,8 @@ bex_labels = ['Age', 'Mass', 'Radius', 'Luminosity', 'Teff', 'Logg', 'NACOJ', 'N
 bex_cloudy_mh0 = {}
 bex_clear_mh0 = {}
 
+opacity = jdi.opannection()
+
 def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True):
     '''
     A function that returns the required inputs for picaso, 
@@ -32,7 +34,7 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True):
     Outputs:
     params - picaso.justdoit.inputs class
     '''
-    opacity = jdi.opannection()
+    global opacity
 
     params = jdi.inputs()
 
@@ -75,6 +77,8 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
     F_lambda
     '''
     if package.lower() == "picaso":
+        global opacity
+
         params, opacity = atmospheric_parameters
         model_wnos, model_alb = params.spectrum(opacity)
         model_wvs = 1./model_wnos * 1e4 # microns
