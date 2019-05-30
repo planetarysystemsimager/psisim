@@ -65,8 +65,8 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
         wv_start = inst_wv - inst_dwv/2.
         wv_end = inst_wv + inst_dwv/2.
 
-        flux = integrate.quad(intermediate_spectrum, wv_start, wv_end) # detector spectrum now in e-/s
-        stellar_flux = integrate.quad(intermediate_stellar_spectrum, wv_start, wv_end) # detector spectrum now in e-/s
+        flux = 1e4*integrate.quad(intermediate_spectrum, wv_start, wv_end)[0] # detector spectrum now in e-/s (1e4 is for micron to angstrom conversion)
+        stellar_flux = 1e4*integrate.quad(intermediate_stellar_spectrum, wv_start, wv_end)[0] # detector spectrum now in e-/s
         detector_spectrum.append(flux)
         detector_stellar_spectrum.append(stellar_flux)
 
