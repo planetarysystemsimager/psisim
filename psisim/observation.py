@@ -41,9 +41,6 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     #Multiply by atmospheric transmission
     stellar_spectrum *= telescope.get_atmospheric_transmission(wvs)
 
-    #Multiply by spectral channel size
-    stellar_spectrum *= (instrument.current_R * wvs) * 1e4
-
     #Multiply by instrument throughputs
     stellar_spectrum *= instrument.get_inst_throughput(wvs)
     stellar_spectrum *= instrument.get_filter_transmission(wvs,instrument.current_filter)
@@ -84,7 +81,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     ########################################
     ##### Now get the various noise sources:
 
-    speckle_noise,read_noise,dark_noise,photon_noise = get_noise_components(separation,star_imag,instrument,wvs,star_spt,detector_stellar_spectrum,detector_spectrum)
+    speckle_noise,read_noise,dark_noise,photon_noise = get_noise_components(separation,star_imag,instrument,instrument.current_wvs,star_spt,detector_stellar_spectrum,detector_spectrum)
 
     #Apply a post-processing gain
     speckle_noise /= post_processing_gain
