@@ -56,7 +56,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     #Downsample to instrument wavelength sampling
     detector_spectrum = []
     detector_stellar_spectrum = []
-    intermediate_spectrum = si.interp1d(wvs, planet_spectrum)
+    intermediate_spectrum = si.interp1d(wvs, scaled_spectrum)
     intermediate_stellar_spectrum = si.interp1d(wvs, stellar_spectrum)
     for inst_wv, inst_dwv in zip(instrument.current_wvs, instrument.current_dwvs):
         wv_start = inst_wv - inst_dwv/2.
