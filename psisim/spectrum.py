@@ -28,7 +28,7 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True):
     Inputs:
     planet_table_entry - a single row, corresponding to a single planet
                             from a universe planet table [astropy table (or maybe astropy row)]
-    planet_type - either "Terrestrial", "Ice" or "Giant" [string]
+    planet_type - either "Terrestrial", "Ice" or "Gas" [string]
     clouds - cloud parameters. For now, only accept True/False to turn clouds on and off
 
     Outputs:
