@@ -175,7 +175,7 @@ def downsample_spectrum(spectrum,R_in, R_out):
     return new_spectrum
 
 
-def get_stellar_spectrum(planet_table_entry,wvs,R,model='pickles',verbose=False):
+def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbose=False):
     ''' 
     A function that returns the stellar spectrum for a given spectral type
 
@@ -218,6 +218,44 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='pickles',verbose=False)
             #Interpolate the spectrum to the wavelength we want
             stellar_spectrum.append(si.interp1d(sp.wave,ds)(wv))
         stellar_spectrum = np.array(stellar_spectrum)
+    
+    elif model == 'Castelli-Kurucz':
+        # For now we're assuming a metallicity of 0, because exosims doesn't
+        # provide anything different
+
+        # Get the Castelli-Kurucz models  
+        sp = get_castelli_kurucz_spectrum(planet_table_entry['StarTeff'],0.,
+            planet_table_entry['StarLogg'])
+
+        # The flux normalization in pysynphot are all over the place, but it allows
+        # you to renormalize, so we will do that here. We'll normalize to the Vmag 
+        # of the star, assuming Johnsons filters
+        sp_norm = sp.renorm(planet_table_entry['StarVmag'],'vegamag',S.Obs.Bandpass('johnson,v'))
+
+        stellar_spectrum = []
+
+        #If wvs is a float then make it a list for the for loop
+        if isinstance(wvs,float):
+            wvs = [wvs]
+
+        #Now get the spectrum!
+        for wv in wvs: 
+            
+            #Get the wavelength sampling of the pysynphot sectrum
+            dwvs = sp.wave[1:]-sp.wave[:-1]
+            dwvs[0] = dwvs[0]
+            #Pick the index closest to our wavelength. 
+            ind = np.where(np.abs((sp.wave-wv)) == np.min(np.abs(sp.wave-wv)))[0]
+            dwv = dwvs[ind]
+
+            R_in = wv/dwv
+            #Down-sample the spectrum to the desired wavelength
+            ds = downsample_spectrum(full_stellar_spectrum,R_in,R)
+            #Interpolate the spectrum to the wavelength we want
+            stellar_spectrum.append(si.interp1d(sp.wave,ds)(wv))
+        
+        stellar_spectrum = np.array(stellar_spectrum)        
+
     else:
         if verbose:
             print("We only support 'pickles' models for now")
@@ -260,6 +298,22 @@ def get_pickles_spectrum(spt,verbose=False):
     sp.convert("photlam")
     
     return sp
+
+
+def get_castelli_kurucz_spectrum(teff,metallicity,logg):
+    '''
+    A function that returns the pysynphot spectrum given the parameters
+    based on the Castelli-Kurucz Atlas
+
+    Retuns the pysynphot spectrum object with wavelength units of microns
+    and flux units of photons/s/cm^2/Angstrom
+    '''
+    sp = psyn.Icat('ck04models',teff,metallicity,logg)
+    sp.convert("Micron")
+    sp.convert("photlam")
+
+    return sp
+
 
 def load_bex_models():
     """
