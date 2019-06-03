@@ -20,7 +20,7 @@ bex_clear_mh0 = {}
 
 opacity = jdi.opannection()
 
-def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True):
+def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True,verbose=False):
     '''
     A function that returns the required inputs for picaso, 
     given a row from a universe planet table
@@ -35,6 +35,10 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True):
     params - picaso.justdoit.inputs class
     '''
     global opacity
+
+    if planet_type != "Jupiter" and verbose:
+        print("Only planet_type='Jupiter' spectra are currently implemented")
+        print("Generating a Jupiter-like spectrum")
 
     params = jdi.inputs()
 
@@ -79,7 +83,7 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
     if package.lower() == "picaso":
         global opacity
 
-        params, opacity = atmospheric_parameters
+        params, _ = atmospheric_parameters
         model_wnos, model_alb = params.spectrum(opacity)
         model_wvs = 1./model_wnos * 1e4 # microns
 

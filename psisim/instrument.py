@@ -118,6 +118,9 @@ class PSI_Blue(Instrument):
         self.ao_filter = ['i']
         self.ao_filter2 = ['H']
 
+        self.IWA = 0.0055 #Inner working angle in arcseconds. Current value based on 1*lambda/D at 800nm
+        self.OWA = 1. #Outer working angle in arcseconds
+
 
         # The current obseving properties - dynamic
         self.exposure_time = None
@@ -220,3 +223,38 @@ class PSI_Blue(Instrument):
             dwvs = np.abs(wvs - np.roll(wvs, 1))
             dwvs[0] = dwvs[1]
         self.current_dwvs = dwvs
+
+    def detect_planets(self,planet_table,snrs,telescope,smallest_iwa_by_wv=True,user_iwas=None):
+        '''
+        A function that returns a boolean array indicating whether or not a planet was detected
+        '''
+
+        if user_iwas is not None:
+
+            if isinstance(user_iwas,float):
+                iwas = self.current_wvs*0. + user_iwas
+            elif np.size(user_iwas) != np.size(self.current_wvs):
+                raise Exception("The input 'user_iwas' array is not the same size as instrument.current_wvs")
+            else:
+                iwas = user_iwas
+        else:
+            if smallest_iwa_by_wv:
+                iwas = self.current_wvs/telescope.diameter*206265 #Lambda/D in arcseconds
+            else: 
+                iwas = self.current_wvs*0. + self.IWA 
+
+        detected = np.full((len(planet_table),self.current_wvs.size),False,dtype=bool)
+
+        #For each planet, for each wavelength check the separation and the SNR
+        for i,planet in enumerate(planet_table):
+            sep = planet['AngSep']
+            for j,wv in enumerate(self.current_wvs): 
+                if (sep > iwas[j]) & (sep < self.OWA) & (snrs[i,j] > 5):
+                    detected[i,j] = True
+
+        return detected
+                
+            
+
+
+

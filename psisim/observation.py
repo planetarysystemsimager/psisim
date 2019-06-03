@@ -81,7 +81,8 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     ########################################
     ##### Now get the various noise sources:
 
-    speckle_noise,read_noise,dark_noise,photon_noise = get_noise_components(separation,star_imag,instrument,instrument.current_wvs,star_spt,detector_stellar_spectrum,detector_spectrum)
+    speckle_noise,read_noise,dark_noise,photon_noise = get_noise_components(separation,star_imag,instrument,
+        instrument.current_wvs,star_spt,detector_stellar_spectrum,detector_spectrum)
 
     #Apply a post-processing gain
     speckle_noise /= post_processing_gain
@@ -100,7 +101,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
 
     #TODO: Currently everything is in e-. We likely want it in a different unit at the end. 
 
-    return detector_spectrum, total_noise
+    return detector_spectrum, total_noise, detector_stellar_spectrum
 
 def get_noise_components(separation,star_imag,instrument,wvs,star_spt,stellar_spectrum,detector_spectrum):
     '''
@@ -149,18 +150,21 @@ def simulate_observation_set(telescope, instrument, planet_table,planet_spectra,
     n_planets = np.size(planet_table) #Not sure this will work
 
     F_lambdas = []
+    F_lambdas_stellar = []
     F_lambda_errors = []
 
     for i,planet in enumerate(planet_table):
-        new_F_lambda,new_F_lambda_errors = simulate_observation(telescope,instrument,
+        new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar = simulate_observation(telescope,instrument,
             planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing_gain)
         F_lambdas.append(new_F_lambda)
+        F_lambdas_stellar.append(new_F_lambda_stellar)
         F_lambda_errors.append(new_F_lambda_errors)
 
     F_lambdas = np.array(F_lambdas)
+    F_lambda_stellar = np.array(F_lambdas_stellar)
     F_lambda_errors = np.array(F_lambda_errors)
 
-    return F_lambdas,F_lambda_errors
+    return F_lambdas,F_lambda_errors,F_lambdas_stellar
 
 
 
