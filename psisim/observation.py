@@ -131,7 +131,7 @@ def get_noise_components(separation,star_imag,instrument,wvs,star_spt,stellar_sp
     #TODO:Add the background noise
 
     #Photon noise. Detector_spectrum should be in total of e- now.
-    photon_noise = np.sqrt(detector_spectrum)
+    photon_noise = np.sqrt(detector_spectrum+speckle_noise)
 
     return speckle_noise,read_noise,dark_noise,photon_noise
 
