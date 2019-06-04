@@ -3,6 +3,8 @@ import os
 import glob
 import scipy.interpolate as si
 import numpy as np
+import astropy.units as u
+import astropy.constants as constants
 
 class Instrument():
     '''
@@ -160,7 +162,7 @@ class PSI_Blue(Instrument):
             contrast_dir = os.path.dirname(psisim.__file__)+"/data/default_contrast/"
 
         if integrator not in ['si','lp']:
-            raise ValueException("The integrator you've selected is not supported."
+            raise ValueError("The integrator you've selected is not supported."
                 " We currently only support standard integrator of linear predictor"
                 " as 'si or 'lp")
 
@@ -180,7 +182,7 @@ class PSI_Blue(Instrument):
         magnitude_index = np.where(mags == host_mag)[0][0]
         #Make sure we support it
         if magnitude_index.shape == 0:
-            raise ValueException("We don't yet support the ao_mag you input. "
+            raise ValueError("We don't yet support the ao_mag you input. "
                 "We currently support between {} and {}".format(np.min(mags),np.max(mags)))
 
         #Now read in the correct contrast file
@@ -217,7 +219,7 @@ class PSI_Blue(Instrument):
         self.n_exposures = n_exposures
 
         if sci_filter not in self.filters:
-            raise ValueException("The filter you selected is not valid for PSF_Blue. Check the self.filters property")
+            raise ValueError("The filter you selected is not valid for PSF_Blue. Check the self.filters property")
         else:
             self.current_filter = sci_filter
 
@@ -262,6 +264,43 @@ class PSI_Blue(Instrument):
         return detected
                 
             
+class PSI_Red(PSI_Blue):
+    '''
+    An implementation of Instrument for PSI-Red. Currently slightly hacked to inherit PSI Blue for code reuse
+    '''
+    def __init__(self):
+        super(PSI_Red,self).__init__()
 
+        # The main instrument properties - static
+        self.read_noise = 0.
+        self.gain = 1. #e-/ADU
+        self.dark_current = 0.
+        self.qe = 1. 
 
+        self.filters = ['L', 'M']
+        self.ao_filter = ['i']
+        self.ao_filter2 = ['H']
 
+        self.IWA = 0.028 #Inner working angle in arcseconds. Current value based on 1*lambda/D at 3 microns
+        self.OWA = 3. #Outer working angle in arcseconds
+
+    def set_observing_mode(self,exposure_time,n_exposures,sci_filter,R,wvs,dwvs=None):
+        '''
+        Sets the current observing setup
+        '''
+
+        self.exposure_time = exposure_time
+        self.n_exposures = n_exposures
+
+        if sci_filter not in self.filters:
+            raise ValueError("The filter you selected is not valid for PSF_Red. Check the self.filters property")
+        else:
+            self.current_filter = sci_filter
+
+        self.current_R = R
+
+        self.current_wvs = wvs
+        if dwvs is None:
+            dwvs = np.abs(wvs - np.roll(wvs, 1))
+            dwvs[0] = dwvs[1]
+        self.current_dwvs = dwvs

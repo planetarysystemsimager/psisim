@@ -53,30 +53,46 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     #and that the planet_spectrum is given at the wvs wavelengths. 
     scaled_spectrum = planet_spectrum*stellar_spectrum
 
+    # Instrument and Sky thermal background in photons/s/cm^2/Angstrom
+    thermal_sky = telescope.get_sky_background(wvs)
+    thermal_sky *= instrument.get_inst_throughput(wvs)
+    #thermal_inst = instrument.get_instrument_background(wvs) # need to think about this
+    thermal_flux = thermal_sky #+ thermal_inst
+    thermal_flux *= telescope.collecting_area*10000 # phtons/s/Angstrom
+    thermal_flux *= instrument.get_filter_transmission(wvs, instrument.current_filter)
+    thermal_flux *= instrument.qe #e-/s/Angstrom
+
     #Downsample to instrument wavelength sampling
     detector_spectrum = []
     detector_stellar_spectrum = []
+    detector_thermal_flux = []
     intermediate_spectrum = si.interp1d(wvs, scaled_spectrum)
     intermediate_stellar_spectrum = si.interp1d(wvs, stellar_spectrum)
+    intermediate_thermal_spectrum = si.interp1d(wvs, thermal_flux)
     for inst_wv, inst_dwv in zip(instrument.current_wvs, instrument.current_dwvs):
         wv_start = inst_wv - inst_dwv/2.
         wv_end = inst_wv + inst_dwv/2.
 
         flux = 1e4*integrate.quad(intermediate_spectrum, wv_start, wv_end)[0] # detector spectrum now in e-/s (1e4 is for micron to angstrom conversion)
         stellar_flux = 1e4*integrate.quad(intermediate_stellar_spectrum, wv_start, wv_end)[0] # detector spectrum now in e-/s
+        thermal_flux = 1e4*integrate.quad(intermediate_thermal_spectrum, wv_start, wv_end)[0] # detector spectrum now in e-/s
         detector_spectrum.append(flux)
         detector_stellar_spectrum.append(stellar_flux)
+        detector_thermal_flux.append(thermal_flux)
 
     detector_spectrum = np.array(detector_spectrum)
     detector_stellar_spectrum = np.array(detector_stellar_spectrum)
+    detector_thermal_flux = np.array(detector_thermal_flux)
 
     #Multiply by the exposure time
     detector_spectrum *= instrument.exposure_time #The detector spectrum is now in e-
     detector_stellar_spectrum *= instrument.exposure_time #The detector spectrum is now in e-
+    detector_thermal_flux *= instrument.exposure_time
 
     #Multiply by the number of exposures
     detector_spectrum *= instrument.n_exposures
     detector_stellar_spectrum *= instrument.n_exposures
+    detector_thermal_flux *= instrument.n_exposures
 
     ########################################
     ##### Now get the various noise sources:
@@ -84,11 +100,13 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     speckle_noise,read_noise,dark_noise,photon_noise = get_noise_components(separation,star_imag,instrument,
         instrument.current_wvs,star_spt,detector_stellar_spectrum,detector_spectrum)
 
+    thermal_noise = np.sqrt(detector_thermal_flux)
+
     #Apply a post-processing gain
     speckle_noise /= post_processing_gain
 
     ## Sum it all up
-    total_noise = np.sqrt(speckle_noise**2+read_noise**2+dark_noise**2+photon_noise**2)
+    total_noise = np.sqrt(speckle_noise**2+read_noise**2+dark_noise**2+photon_noise**2+thermal_noise**2)
 
     # Inject noise into spectrum
     if inject_noise:
@@ -102,7 +120,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     #TODO: Currently everything is in e-. We likely want it in a different unit at the end. 
 
     if return_noise_components:
-        return detector_spectrum, total_noise, detector_stellar_spectrum,(speckle_noise,read_noise,dark_noise,photon_noise)
+        return detector_spectrum, total_noise, detector_stellar_spectrum,(speckle_noise,read_noise,dark_noise,photon_noise,thermal_noise)
     else:
         return detector_spectrum, total_noise, detector_stellar_spectrum
 
