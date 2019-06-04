@@ -1,10 +1,10 @@
 from psisim import telescope,instrument,observation,spectrum,universe,plots
 import numpy as np
-
+import matplotlib.pylab as plt
 
 tmt = telescope.TMT()
 psi_blue = instrument.PSI_Blue()
-psi_blue.set_observing_mode(60,40,'z',50, np.linspace(0.65,0.8,25)) #60s, 40 exposures,z-band, R of 10
+psi_blue.set_observing_mode(3600,10,'z',50, np.linspace(0.60,0.85,40)) #60s, 40 exposures,z-band, R of 10
 
 exosims_config_filename = "forBruceandDimitri_EXOCAT1.json" #Some filename here
 uni = universe.ExoSims_Universe(exosims_config_filename)
@@ -40,13 +40,10 @@ print("\n Starting to generate planet spectra")
 for planet in planet_table[:n_planets_now]:
 
 	#INSERT PLANET SELECTION RULES HERE
-	planet_type = "Jupiter"
+	planet_type = "Gas"
 	planet_types.append(planet_type)
 
-	#Generate the spectrum and downsample to intermediate resolution
-	atmospheric_parameters = spectrum.generate_picaso_inputs(planet,planet_type)
-	planet_spectrum = spectrum.simulate_spectrum(planet, model_wvs, intermediate_R, atmospheric_parameters)
-	planet_spectra.append(planet_spectrum)
+    planet_spectra.append(planet_spectrum)
 
 post_processing_gain=1000
 sim_F_lambda, sim_F_lambda_errs,sim_F_lambda_stellar = observation.simulate_observation_set(tmt, psi_blue,
@@ -69,4 +66,33 @@ ax.text(5e-2,1e-7,"Planets detected: {}".format(len(np.where(detected[:,wv_index
 ax.text(5e-2,0.5e-7,"Planets not detected: {}".format(len(np.where(~detected[:,wv_index])[0])),color='k')
 ax.text(5e-2,0.2e-7,"Post-processing gain: {}".format(post_processing_gain),color='k')
 
+
+# get the best SNR Planet
+avg_snrs = np.mean(snrs, axis=1)
+print(avg_snrs)
+bestsnr = np.argmax(avg_snrs)
+
+# Generate the cloudy spectrum of this planet
+planet = planet_table[rand_planets[bestsnr]]
+atmospheric_parameters_clear = spectrum.generate_picaso_inputs(planet, planet_type, clouds=False)
+planet_spectrum_clear = spectrum.simulate_spectrum(planet, model_wvs, intermediate_R, atmospheric_parameters_clear)
+
+# Generate noisy spectra for cloudy and clear
+clear_F_lambda, clear_F_lambda_errs = observation.simulate_observation(tmt, psi_blue,
+   planet_table[rand_planets[bestsnr]], planet_spectrum_clear, model_wvs, intermediate_R, inject_noise=True,post_processing_gain=1000)
+cloudy_F_lambda, cloudy_F_lambda_errs = observation.simulate_observation(tmt, psi_blue,
+   planet_table[rand_planets[bestsnr]], planet_spectra[bestsnr], model_wvs, intermediate_R, inject_noise=True,post_processing_gain=1000)
+
+fig = plt.figure()
+
+plt.errorbar(psi_blue.current_wvs*1000, clear_F_lambda, yerr=clear_F_lambda_errs, color='Blue', marker='o', linestyle='none', label="Clear")
+plt.errorbar(psi_blue.current_wvs*1000, cloudy_F_lambda, yerr=cloudy_F_lambda_errs, color='Gray', marker='o', linestyle='none', label="Cloudy")
+
+plt.grid()
+plt.xlabel("Wavelength (nm)")
+plt.ylabel("Flux (counts)")
+plt.legend()
+plt.tight_layout()
+
+plt.show()
 

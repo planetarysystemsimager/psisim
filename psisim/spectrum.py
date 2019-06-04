@@ -100,7 +100,7 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         fp = np.interp(wvs, model_wvs[argsort], lowres_fp[argsort])
 
     elif package.lower() == "bex-cooling":
-        age, band, cloudy = atmospheric_parameters # age in years, band is 'R', 'I', 'J', 'H', 'K', cloudy is True/False
+        age, band, cloudy = atmospheric_parameters # age in years, band is 'R', 'I', 'J', 'H', 'K', 'L', 'M', cloudy is True/False
         
         if len(bex_cloudy_mh0) == 0:
             # need to load in models. first time using
@@ -135,8 +135,14 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         elif band == 'K':
             bexlabel = 'SPHEREKs'
             starlabel = 'StarKmag'
+        elif band == 'L':
+            bexlabel = 'NACOLp'
+            starlabel = 'StarKmag'
+        elif band == 'K':
+            bexlabel = 'NACOMp'
+            starlabel = 'StarKmag'
         else:
-            raise ValueError("Band needs to be 'R', 'I', 'J', 'H', 'K'. Got {0}.".format(band))
+            raise ValueError("Band needs to be 'R', 'I', 'J', 'H', 'K', 'L', 'M'. Got {0}.".format(band))
 
         logage = np.log10(age)
 
