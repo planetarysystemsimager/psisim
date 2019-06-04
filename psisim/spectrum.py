@@ -80,8 +80,9 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
     Outputs:
     F_lambda
     '''
+    global opacity
     if package.lower() == "picaso":
-        global opacity
+        # global opacity
 
         params, _ = atmospheric_parameters
         model_wnos, model_alb = params.spectrum(opacity)
@@ -98,6 +99,51 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         argsort = np.argsort(model_wvs)
 
         fp = np.interp(wvs, model_wvs[argsort], lowres_fp[argsort])
+
+        return fp
+
+    elif package.lower() == "picaso+pol":
+        '''
+        This is just like picaso, but it adds a layer of polarization on top, 
+        and returns a polarized intensity spectrum
+        Based on the peak polarization vs. albedo curve from Madhusudhan+2012. 
+        I'm pretty sure this is based on Rayleigh scattering, and may not be valid 
+        for all cloud types. 
+        '''
+        
+        # global opacity
+
+        params, _ = atmospheric_parameters
+        model_wnos, model_alb = params.spectrum(opacity)
+        model_wvs = 1./model_wnos * 1e4 # microns
+
+        model_dwvs = np.abs(model_wvs - np.roll(model_wvs, 1))
+        model_dwvs[0] = model_dwvs[1]
+        model_R = model_wvs/model_dwvs
+
+        highres_fp =  model_alb * (planet_table_entry['PlanetRadius']*u.earthRad.to(u.au)/planet_table_entry['SMA'])**2 # flux ratio relative to host star
+
+        #Get the polarization vs. albedo curve from Madhusudhan+2012, Figure 5
+        albedo, peak_pol = np.loadtxt(os.path.dirname(psisim.__file__)+"/data/polarization/PeakPol_vs_albedo_Madhusudhan2012.csv",
+            delimiter=",",unpack=True)
+        #Interpolate the curve to the model apbleas
+        interp_peak_pol = np.interp(model_alb,albedo,peak_pol)
+
+        #Calculate polarized intensity, given the phase and albedo
+        planet_phase = planet_table_entry['Phase']
+        rayleigh_curve = np.sin(planet_phase)**2/(1+np.cos(planet_phase)**2)
+        planet_polarization_fraction = interp_peak_pol*rayleigh_curve
+        highres_planet_polarized_intensity = highres_fp*planet_polarization_fraction
+
+        lowres_fp = downsample_spectrum(highres_fp, np.mean(model_R), R)
+        lowres_pol = downsample_spectrum(highres_planet_polarized_intensity, np.mean(model_R), R)
+
+        argsort = np.argsort(model_wvs)
+
+        fp = np.interp(wvs, model_wvs[argsort], lowres_fp[argsort])
+        pol = np.interp(wvs, model_wvs[argsort], lowres_pol[argsort])
+
+        return fp,pol
 
     elif package.lower() == "bex-cooling":
         age, band, cloudy = atmospheric_parameters # age in years, band is 'R', 'I', 'J', 'H', 'K', cloudy is True/False
@@ -157,7 +203,7 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         if not isinstance(wvs, (float,int)):
             fp = np.ones(wvs.shape) * fp
 
-    return fp
+        return fp
 
 def downsample_spectrum(spectrum,R_in, R_out):
     '''

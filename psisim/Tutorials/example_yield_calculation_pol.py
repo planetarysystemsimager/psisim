@@ -1,5 +1,6 @@
 from psisim import telescope,instrument,observation,spectrum,universe,plots
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 tmt = telescope.TMT()
@@ -15,8 +16,9 @@ n_planets = len(planet_table)
 
 planet_types = []
 planet_spectra = []
+planet_polarized_spectra = []
 
-n_planets_now = 10
+n_planets_now = 2
 
 ########### Model spectrum wavelength choice #############
 # We're going to generate a model spectrum at a resolution twice the 
@@ -45,7 +47,9 @@ for planet in planet_table[:n_planets_now]:
 
 	#Generate the spectrum and downsample to intermediate resolution
 	atmospheric_parameters = spectrum.generate_picaso_inputs(planet,planet_type)
-	planet_spectrum = spectrum.simulate_spectrum(planet, model_wvs, intermediate_R, atmospheric_parameters)
+	planet_spectrum,polarized_spectrum = spectrum.simulate_spectrum(planet, model_wvs, intermediate_R, atmospheric_parameters,package="picaso+pol")
+	# planet_spectrum = spectrum.simulate_spectrum(planet, model_wvs, intermediate_R, atmospheric_parameters,package="picaso")
+	planet_polarized_spectra.append(polarized_spectrum)
 	planet_spectra.append(planet_spectrum)
 
 print("Done generating planet spectra")
@@ -75,3 +79,11 @@ fig, ax = plots.plot_detected_planet_contrasts(planet_table[:n_planets_now],wv_i
 ax.text(4e-2,1e-5,"Planets detected: {}".format(len(np.where(detected[:,wv_index])[0])),color='k')
 ax.text(4e-2,0.5e-5,"Planets not detected: {}".format(len(np.where(~detected[:,wv_index])[0])),color='k')
 ax.text(4e-2,0.25e-5,"Post-processing gain: {}".format(post_processing_gain),color='k')
+
+plt.figure()
+plt.semilogx(seps,speckle_noises[:,10],'o',label="Speckle Noise")
+plt.semilogx(seps,photon_noises[:,10],'o',label="Photon Noise")
+# plt.xscale('log')
+plt.legend()
+plt.savefig("fig2.png")
+
