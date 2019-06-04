@@ -6,7 +6,7 @@ import scipy.interpolate as si
 import scipy.integrate as integrate
 
 def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum,wvs,spectrum_R,
-    inject_noise=True,verbose=False,post_processing_gain = 10):
+    inject_noise=True,verbose=False,post_processing_gain = 10,return_noise_components=False):
     '''
     A function that simulates an observation
 
@@ -25,7 +25,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     ##### ALL UNITS NEED TO BE PROPERLY EXAMINED #####
 
     #Some relevant planet properties
-    separation = planet_table_entry['AngSep']
+    separation = planet_table_entry['AngSep']/1000
     star_imag = planet_table_entry['StarImag']
     star_spt = planet_table_entry['StarSpT']
 
@@ -101,7 +101,10 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
 
     #TODO: Currently everything is in e-. We likely want it in a different unit at the end. 
 
-    return detector_spectrum, total_noise, detector_stellar_spectrum
+    if return_noise_components:
+        return detector_spectrum, total_noise, detector_stellar_spectrum,(speckle_noise,read_noise,dark_noise,photon_noise)
+    else:
+        return detector_spectrum, total_noise, detector_stellar_spectrum
 
 def get_noise_components(separation,star_imag,instrument,wvs,star_spt,stellar_spectrum,detector_spectrum):
     '''
@@ -125,13 +128,15 @@ def get_noise_components(separation,star_imag,instrument,wvs,star_spt,stellar_sp
     # detector_spectrum += dark_current
     dark_noise = np.sqrt(dark_current)
 
+    #TODO:Add the background noise
+
     #Photon noise. Detector_spectrum should be in total of e- now.
     photon_noise = np.sqrt(detector_spectrum)
 
     return speckle_noise,read_noise,dark_noise,photon_noise
 
 def simulate_observation_set(telescope, instrument, planet_table,planet_spectra,wvs,spectra_R,inject_noise=False,
-    post_processing_gain=10):
+    post_processing_gain=10,return_noise_components=False):
     '''
     Simulates observations of multiple planets, with the same observing configs
     
@@ -152,19 +157,33 @@ def simulate_observation_set(telescope, instrument, planet_table,planet_spectra,
     F_lambdas = []
     F_lambdas_stellar = []
     F_lambda_errors = []
+    noise_components = []
 
     for i,planet in enumerate(planet_table):
-        new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar = simulate_observation(telescope,instrument,
-            planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing_gain)
-        F_lambdas.append(new_F_lambda)
-        F_lambdas_stellar.append(new_F_lambda_stellar)
-        F_lambda_errors.append(new_F_lambda_errors)
+        if return_noise_components:
+            new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar,F_lambda_noise_components = simulate_observation(telescope,instrument,
+                planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing_gain,
+                return_noise_components=return_noise_components)
+            F_lambdas.append(new_F_lambda)
+            F_lambdas_stellar.append(new_F_lambda_stellar)
+            F_lambda_errors.append(new_F_lambda_errors)
+            noise_components.append(F_lambda_noise_components)
+        else:
+            new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar = simulate_observation(telescope,instrument,
+                planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing_gain)
+            F_lambdas.append(new_F_lambda)
+            F_lambdas_stellar.append(new_F_lambda_stellar)
+            F_lambda_errors.append(new_F_lambda_errors)
+
 
     F_lambdas = np.array(F_lambdas)
     F_lambda_stellar = np.array(F_lambdas_stellar)
     F_lambda_errors = np.array(F_lambda_errors)
-
-    return F_lambdas,F_lambda_errors,F_lambdas_stellar
+    
+    if return_noise_components:
+        return F_lambdas,F_lambda_errors,F_lambdas_stellar, noise_components
+    else:
+        return F_lambdas,F_lambda_errors,F_lambdas_stellar
 
 
 

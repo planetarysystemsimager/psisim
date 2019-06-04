@@ -42,9 +42,9 @@ class Instrument():
         '''
 
         if isinstance(wvs,float):
-            return 1
+            return 0.15
         else:
-            return np.ones(len(wvs))
+            return np.ones(len(wvs))*0.15
 
     def get_filter_transmission(self,wvs,filter_name):
         '''
@@ -130,8 +130,11 @@ class PSI_Blue(Instrument):
         self.current_wvs = None
         self.current_dwvs = None
 
+        # By default we assume a standard integrator, but 'lp' is also acceptable
+        self.ao_algo = 'si'
+
     def get_speckle_noise(self,separations,ao_mag,sci_mag,wvs,SpT,ao_mag2=None,
-        contrast_dir=None, integrator='si'):
+        contrast_dir=None):
         '''
         Returns the contrast for a given list of separations. 
         The default is to use the contrasts provided so far by Jared Males
@@ -150,6 +153,8 @@ class PSI_Blue(Instrument):
         get_speckle_noise - Either an array of length [n,1] if only one wavelength passed, or shape [n,m]
 
         '''
+
+        integrator=self.ao_algo
 
         if contrast_dir is None:
             contrast_dir = os.path.dirname(psisim.__file__)+"/data/default_contrast/"
@@ -239,7 +244,7 @@ class PSI_Blue(Instrument):
                 iwas = user_iwas
         else:
             if smallest_iwa_by_wv:
-                iwas = self.current_wvs/telescope.diameter*206265 #Lambda/D in arcseconds
+                iwas = self.current_wvs*1e-6/telescope.diameter*206265 #Lambda/D in arcseconds
             else: 
                 iwas = self.current_wvs*0. + self.IWA 
 
@@ -247,8 +252,10 @@ class PSI_Blue(Instrument):
 
         #For each planet, for each wavelength check the separation and the SNR
         for i,planet in enumerate(planet_table):
-            sep = planet['AngSep']
+            sep = planet['AngSep']/1000
             for j,wv in enumerate(self.current_wvs): 
+                # if sep < 0.070:
+                    # print(sep,snrs[i,j],(sep > iwas[j]))
                 if (sep > iwas[j]) & (sep < self.OWA) & (snrs[i,j] > 5):
                     detected[i,j] = True
 

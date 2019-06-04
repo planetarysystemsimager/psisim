@@ -16,7 +16,7 @@ n_planets = len(planet_table)
 planet_types = []
 planet_spectra = []
 
-n_planets_now = 2
+n_planets_now = 100
 
 ########### Model spectrum wavelength choice #############
 # We're going to generate a model spectrum at a resolution twice the 
@@ -48,9 +48,16 @@ for planet in planet_table[:n_planets_now]:
 	planet_spectrum = spectrum.simulate_spectrum(planet, model_wvs, intermediate_R, atmospheric_parameters)
 	planet_spectra.append(planet_spectrum)
 
+print("Done generating planet spectra")
+print("\n Starting to simulate observations")
+
 post_processing_gain=1000
-sim_F_lambda, sim_F_lambda_errs,sim_F_lambda_stellar = observation.simulate_observation_set(tmt, psi_blue,
-	planet_table[:n_planets_now], planet_spectra, model_wvs, intermediate_R, inject_noise=False,post_processing_gain=post_processing_gain)
+sim_F_lambda, sim_F_lambda_errs,sim_F_lambda_stellar, noise_components = observation.simulate_observation_set(tmt, psi_blue,
+	planet_table[:n_planets_now], planet_spectra, model_wvs, intermediate_R, inject_noise=False,
+	post_processing_gain=post_processing_gain,return_noise_components=True)
+
+speckle_noises = np.array([s[0] for s in noise_components])
+photon_noises = np.array([s[3] for s in noise_components])
 
 flux_ratios = sim_F_lambda/sim_F_lambda_stellar
 detection_limits = sim_F_lambda_errs/sim_F_lambda_stellar
@@ -61,12 +68,18 @@ detected = psi_blue.detect_planets(planet_table[:n_planets_now],snrs,tmt)
 #Choose which wavelength you want to plot the detections at:
 wv_index = 10
 fig, ax = plots.plot_detected_planet_contrasts(planet_table[:n_planets_now],wv_index,
-	detected,flux_ratios,psi_blue,tmt,ymin=1e-13,alt_data=detection_limits,alt_label=r"5-$\sigma$ Detection Limits")
+	detected,flux_ratios,psi_blue,tmt,ymin=1e-13,alt_data=5*detection_limits,alt_label=r"5-$\sigma$ Detection Limits")
 
 #The user can now adjust the plot as they see fit. 
 #e.g. Annotate the plot
-ax.text(5e-2,1e-7,"Planets detected: {}".format(len(np.where(detected[:,wv_index])[0])),color='k')
-ax.text(5e-2,0.5e-7,"Planets not detected: {}".format(len(np.where(~detected[:,wv_index])[0])),color='k')
-ax.text(5e-2,0.2e-7,"Post-processing gain: {}".format(post_processing_gain),color='k')
+ax.text(4e-2,1e-5,"Planets detected: {}".format(len(np.where(detected[:,wv_index])[0])),color='k')
+ax.text(4e-2,0.5e-5,"Planets not detected: {}".format(len(np.where(~detected[:,wv_index])[0])),color='k')
+ax.text(4e-2,0.25e-5,"Post-processing gain: {}".format(post_processing_gain),color='k')
 
+
+plt.figure()
+plt.scatter(seps,speckle_noises[:,10],label="Speckle Noise")
+plt.scatter(seps,photon_noises[:,10],label="Photon Noise")
+# plt.xscale('log')
+plt.legend()
 
