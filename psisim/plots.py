@@ -46,7 +46,7 @@ def plot_detected_planet_contrasts(planet_table,wv_index,detected,flux_ratios,in
     ax.scatter(seps[~detected[:,wv_index]],flux_ratios[:,wv_index][~detected[:,wv_index]],
         marker='.',label="Full Sample",s=20)
 
-    print(seps[~detected[:,wv_index]],flux_ratios[:,wv_index][~detected[:,wv_index]])
+    # print(seps[~detected[:,wv_index]],flux_ratios[:,wv_index][~detected[:,wv_index]])
 
     #Plot the detections
     ax.scatter(seps[detected[:,wv_index]],flux_ratios[:,wv_index][detected[:,wv_index]],marker='o',label="Detected",color='r')
@@ -60,11 +60,10 @@ def plot_detected_planet_contrasts(planet_table,wv_index,detected,flux_ratios,in
 
     #If detection_limits is passed, then plot the 5-sigma detection limits for each source
     if alt_data is not None:
-        ax.scatter(seps[~detected[:,wv_index]],alt_data[:,wv_index][~detected[:,wv_index]],marker='.',
+        ax.scatter(seps,alt_data[:,wv_index],marker='.',
             label=alt_label,color='darkviolet',s=20)
-        for i,sep in enumerate(seps[~detected[:,wv_index]]):
-            ax.plot([sep,sep],[flux_ratios[i,wv_index][~detected[i,wv_index]],alt_data[i,wv_index][~detected[i,wv_index]]],
-                color='k',alpha=0.1,linewidth=1)
+        for i,sep in enumerate(seps):
+            ax.plot([sep,sep],[flux_ratios[i,wv_index],alt_data[i,wv_index]],color='k',alpha=0.1,linewidth=1)
 
     #Axis title
     ax.set_title("Planet Detection Yield at {}um".format(instrument.current_wvs[wv_index]))
