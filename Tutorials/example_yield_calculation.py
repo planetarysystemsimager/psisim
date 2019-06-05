@@ -13,6 +13,9 @@ uni = universe.ExoSims_Universe(exosims_config_filename)
 uni.simulate_EXOSIMS_Universe()
 
 planet_table = uni.planets
+#Down select the planets whose separations are less than lambda/D
+min_iwa = np.min(psi_blue.current_wvs)*1e-6/tmt.diameter*206265
+planet_table = planet_table[planet_table['AngSep']/1000 > min_iwa]
 n_planets = len(planet_table)
 
 planet_types = []
