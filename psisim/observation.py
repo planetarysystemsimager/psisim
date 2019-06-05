@@ -32,7 +32,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     #Get the stellar spectrum at the wavelengths of interest. 
     #The stellar spectrum will be in units of photons/s/cm^2/angstrom
     stellar_spectrum = spectrum.get_stellar_spectrum(planet_table_entry,wvs,instrument.current_R,
-        model='pickles',verbose=verbose)
+        verbose=verbose)
 
     #Multiply the stellar spectrum by the collecting area and a factor of 10,000
     #to convert from m^2 to cm^2 and get the stellar spectrum in units of photons/s
@@ -98,15 +98,13 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     ##### Now get the various noise sources:
 
     speckle_noise,read_noise,dark_noise,photon_noise = get_noise_components(separation,star_imag,instrument,
-        instrument.current_wvs,star_spt,detector_stellar_spectrum,detector_spectrum)
-
-    thermal_noise = np.sqrt(detector_thermal_flux)
+        instrument.current_wvs,star_spt,detector_stellar_spectrum,detector_spectrum,detector_thermal_flux)
 
     #Apply a post-processing gain
     speckle_noise /= post_processing_gain
 
     ## Sum it all up
-    total_noise = np.sqrt(speckle_noise**2+read_noise**2+dark_noise**2+photon_noise**2+thermal_noise**2)
+    total_noise = np.sqrt(speckle_noise**2+read_noise**2+dark_noise**2+photon_noise**2)
 
     # Inject noise into spectrum
     if inject_noise:
@@ -120,11 +118,11 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     #TODO: Currently everything is in e-. We likely want it in a different unit at the end. 
 
     if return_noise_components:
-        return detector_spectrum, total_noise, detector_stellar_spectrum,(speckle_noise,read_noise,dark_noise,photon_noise,thermal_noise)
+        return detector_spectrum, total_noise, detector_stellar_spectrum,(speckle_noise,read_noise,dark_noise,photon_noise)
     else:
         return detector_spectrum, total_noise, detector_stellar_spectrum
 
-def get_noise_components(separation,star_imag,instrument,wvs,star_spt,stellar_spectrum,detector_spectrum):
+def get_noise_components(separation,star_imag,instrument,wvs,star_spt,stellar_spectrum,detector_spectrum,thermal_spectrum):
     '''
     Calculate all of the different noise contributions
     '''
@@ -149,7 +147,7 @@ def get_noise_components(separation,star_imag,instrument,wvs,star_spt,stellar_sp
     #TODO:Add the background noise
 
     #Photon noise. Detector_spectrum should be in total of e- now.
-    photon_noise = np.sqrt(detector_spectrum)
+    photon_noise = np.sqrt(detector_spectrum + thermal_spectrum)
 
     return speckle_noise,read_noise,dark_noise,photon_noise
 
