@@ -285,7 +285,7 @@ class PSI_Red(PSI_Blue):
         self.dark_current = 0.
         self.qe = 1. 
 
-        self.filters = ['L', 'M']
+        self.filters = ['K', 'L', 'M']
         self.ao_filter = ['i']
         self.ao_filter2 = ['H']
 

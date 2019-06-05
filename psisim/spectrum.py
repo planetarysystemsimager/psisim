@@ -52,9 +52,13 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True,verbose=
     star_logG = planet_table_entry['StarLogg']
     if star_logG > 5.0:
         star_logG = 5.0
+    #The current stellar models do not like Teff < 3500, so we'll force it here for now. 
+    star_Teff = planet_table_entry['StarTeff']
+    if star_Teff < 3500:
+        star_Teff = 3500
         
     #define star
-    params.star(opacity, planet_table_entry['StarTeff'], 0, star_logG) #opacity db, pysynphot database, temp, metallicity, logg
+    params.star(opacity, star_Teff, 0, star_logG) #opacity db, pysynphot database, temp, metallicity, logg
 
     # define atmosphere PT profile and mixing ratios. 
     # Hard coded as Jupiters right now. 
@@ -184,7 +188,7 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         elif band == 'L':
             bexlabel = 'NACOLp'
             starlabel = 'StarKmag'
-        elif band == 'K':
+        elif band == 'M':
             bexlabel = 'NACOMp'
             starlabel = 'StarKmag'
         else:
@@ -279,14 +283,26 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         # For now we're assuming a metallicity of 0, because exosims doesn't
         # provide anything different
 
+        #The current stellar models do not like log g > 5, so we'll force it here for now. 
+        star_logG = planet_table_entry['StarLogg']
+        if star_logG > 5.0:
+            star_logG = 5.0
+        #The current stellar models do not like Teff < 3500, so we'll force it here for now. 
+        star_Teff = planet_table_entry['StarTeff']
+        if star_Teff < 3500:
+            star_Teff = 3500
+
         # Get the Castelli-Kurucz models  
-        sp = get_castelli_kurucz_spectrum(planet_table_entry['StarTeff'],0.,
-            planet_table_entry['StarLogg'])
+        sp = get_castelli_kurucz_spectrum(star_Teff, 0., star_logG)
 
         # The flux normalization in pysynphot are all over the place, but it allows
         # you to renormalize, so we will do that here. We'll normalize to the Vmag 
         # of the star, assuming Johnsons filters
-        sp_norm = sp.renorm(planet_table_entry['StarVmag'],'vegamag',S.Obs.Bandpass('johnson,v'))
+        sp_norm = sp.renorm(planet_table_entry['StarVmag'],'vegamag', ps.ObsBandpass('johnson,v'))
+
+        # we normally want to put this in the get_castelli_kurucz_spectrum() function but the above line doens't work if we change units
+        sp_norm.convert("Micron")
+        sp_norm.convert("photlam")
 
         stellar_spectrum = []
 
@@ -298,17 +314,17 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         for wv in wvs: 
             
             #Get the wavelength sampling of the pysynphot sectrum
-            dwvs = sp.wave[1:]-sp.wave[:-1]
-            dwvs[0] = dwvs[0]
+            dwvs = sp_norm.wave - np.roll(sp_norm.wave, 1)
+            dwvs[0] = dwvs[1]
             #Pick the index closest to our wavelength. 
-            ind = np.where(np.abs((sp.wave-wv)) == np.min(np.abs(sp.wave-wv)))[0]
+            ind = np.argsort(np.abs((sp_norm.wave-wv)))[0]
             dwv = dwvs[ind]
 
             R_in = wv/dwv
             #Down-sample the spectrum to the desired wavelength
-            ds = downsample_spectrum(full_stellar_spectrum,R_in,R)
+            ds = downsample_spectrum(sp_norm.flux, R_in, R)
             #Interpolate the spectrum to the wavelength we want
-            stellar_spectrum.append(si.interp1d(sp.wave,ds)(wv))
+            stellar_spectrum.append(si.interp1d(sp_norm.wave,ds)(wv))
         
         stellar_spectrum = np.array(stellar_spectrum)        
 
@@ -364,9 +380,7 @@ def get_castelli_kurucz_spectrum(teff,metallicity,logg):
     Retuns the pysynphot spectrum object with wavelength units of microns
     and flux units of photons/s/cm^2/Angstrom
     '''
-    sp = psyn.Icat('ck04models',teff,metallicity,logg)
-    sp.convert("Micron")
-    sp.convert("photlam")
+    sp = ps.Icat('ck04models',teff,metallicity,logg)
 
     return sp
 
