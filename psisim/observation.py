@@ -116,9 +116,9 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
             detector_spectrum[i] = np.random.normal(detector_spectrum[i],noise)
 
     #TODO: Currently everything is in e-. We likely want it in a different unit at the end. 
-
+    
     if return_noise_components:
-        return detector_spectrum, total_noise, np.array(detector_stellar_spectrum),np.array(speckle_noise,read_noise,dark_noise,photon_noise)
+        return detector_spectrum, total_noise, np.array(detector_stellar_spectrum), np.array([speckle_noise,read_noise,dark_noise,photon_noise])
     else:
         return detector_spectrum, total_noise, np.array(detector_stellar_spectrum)
 
@@ -195,6 +195,7 @@ def simulate_observation_set(telescope, instrument, planet_table,planet_spectra,
     F_lambdas = np.array(F_lambdas)
     F_lambda_stellar = np.array(F_lambdas_stellar)
     F_lambda_errors = np.array(F_lambda_errors)
+    noise_components = np.array(noise_components)
     
     if return_noise_components:
         return F_lambdas,F_lambda_errors,F_lambdas_stellar, noise_components
