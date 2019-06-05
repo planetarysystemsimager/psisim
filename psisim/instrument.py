@@ -178,6 +178,14 @@ class PSI_Blue(Instrument):
 
         #Round the host_Imags
         host_mag = np.around(ao_mag)
+
+        #Deal with possible out of bound mags
+        if host_mag < np.min(mags):
+            host_mag = np.min(mags)
+
+        if host_mag > np.max(mags):
+            host_mag = np.max(mags)
+
         #Get the file index
         magnitude_index = np.where(mags == host_mag)[0][0]
         #Make sure we support it
