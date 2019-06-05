@@ -120,7 +120,8 @@ noise_components_hdu.writeto("noise_components.fits",overwrite=True)
 # get the best SNR Planet
 avg_snrs = np.mean(snrs, axis=1)
 print(avg_snrs)
-bestsnr = np.argmax(avg_snrs)
+argsort_snrs = np.argsort(np.abs(avg_snrs - 6))
+bestsnr = argsort_snrs[0] #np.argmax(avg_snrs)
 
 # Generate the cloudy spectrum of this planet
 planet = planet_table[rand_planets[bestsnr]]
