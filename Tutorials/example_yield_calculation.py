@@ -18,10 +18,12 @@ n_planets = len(planet_table)
 planet_types = []
 planet_spectra = []
 
-n_planets_now = 250
+n_planets_now = 2
+#We'll pick random planets, since many systems are multi-planet systems and they show up 
+#sequentially in EXOSIMS
 rand_planets = np.random.randint(0, n_planets, n_planets_now)
 
-########### Model spectrum wavelength choice #############
+########### Model spectrum wavelength choice based on instrument setup #############
 # We're going to generate a model spectrum at a resolution twice the 
 # requested resolution
 intermediate_R = psi_blue.current_R*2
@@ -57,6 +59,8 @@ for planet in planet_table[rand_planets]:
 print("Done generating planet spectra")
 print("\n Starting to simulate observations")
 
+######################## Plot Yield ######################
+
 post_processing_gain=1000
 sim_F_lambda, sim_F_lambda_errs,sim_F_lambda_stellar, noise_components = observation.simulate_observation_set(tmt, psi_blue,
 	planet_table[rand_planets], planet_spectra, model_wvs, intermediate_R, inject_noise=False,
@@ -83,6 +87,9 @@ ax.text(4e-2,0.5e-5,"Planets not detected: {}".format(len(np.where(~detected[:,w
 ax.text(4e-2,0.25e-5,"Post-processing gain: {}".format(post_processing_gain),color='k')
 
 
+######################## Plot Cloud vs. Clear ######################
+
+
 # get the best SNR Planet
 avg_snrs = np.mean(snrs, axis=1)
 print(avg_snrs)
@@ -95,9 +102,9 @@ planet_spectrum_clear = spectrum.simulate_spectrum(planet, model_wvs, intermedia
 
 # Generate noisy spectra for cloudy and clear
 clear_F_lambda, clear_F_lambda_errs, _ = observation.simulate_observation(tmt, psi_blue,
-   planet_table[rand_planets[bestsnr]], planet_spectrum_clear, model_wvs, intermediate_R, inject_noise=True,post_processing_gain=1000)
+   planet_table[rand_planets[bestsnr]], planet_spectrum_clear, model_wvs, intermediate_R, inject_noise=True,post_processing_gain=post_processing_gain)
 cloudy_F_lambda, cloudy_F_lambda_errs, _ = observation.simulate_observation(tmt, psi_blue,
-   planet_table[rand_planets[bestsnr]], planet_spectra[bestsnr], model_wvs, intermediate_R, inject_noise=True,post_processing_gain=1000)
+   planet_table[rand_planets[bestsnr]], planet_spectra[bestsnr], model_wvs, intermediate_R, inject_noise=True,post_processing_gain=post_processing_gain)
 
 fig = plt.figure()
 
