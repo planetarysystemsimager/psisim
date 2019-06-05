@@ -118,9 +118,9 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     #TODO: Currently everything is in e-. We likely want it in a different unit at the end. 
 
     if return_noise_components:
-        return detector_spectrum, total_noise, detector_stellar_spectrum,(speckle_noise,read_noise,dark_noise,photon_noise)
+        return detector_spectrum, total_noise, np.array(detector_stellar_spectrum),np.array(speckle_noise,read_noise,dark_noise,photon_noise)
     else:
-        return detector_spectrum, total_noise, detector_stellar_spectrum
+        return detector_spectrum, total_noise, np.array(detector_stellar_spectrum)
 
 def get_noise_components(separation,star_imag,instrument,wvs,star_spt,stellar_spectrum,detector_spectrum,thermal_spectrum):
     '''
@@ -137,12 +137,12 @@ def get_noise_components(separation,star_imag,instrument,wvs,star_spt,stellar_sp
     speckle_noise *= stellar_spectrum 
 
     # Multiply the read noise by sqrt(n_exposures)
-    read_noise = np.sqrt(instrument.n_exposures)*instrument.read_noise
+    read_noise = speckle_noise*0.+np.sqrt(instrument.n_exposures)*instrument.read_noise
     
     #Add the dark_current to the spectrum and calculate dark noise. NEVERMIND NOT ADDING TO SPECTRUM RIGHT NOW
     dark_current = instrument.dark_current*instrument.exposure_time*instrument.n_exposures
     # detector_spectrum += dark_current
-    dark_noise = np.sqrt(dark_current)
+    dark_noise = speckle_noise*0.+np.sqrt(dark_current)
 
     #TODO:Add the background noise
 

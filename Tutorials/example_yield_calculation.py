@@ -1,8 +1,9 @@
 from psisim import telescope,instrument,observation,spectrum,universe,plots
 import numpy as np
 import matplotlib.pylab as plt
-
+import copy
 import time
+from astropy.io import fits
 
 tmt = telescope.TMT()
 psi_blue = instrument.PSI_Blue()
@@ -13,9 +14,11 @@ uni = universe.ExoSims_Universe(exosims_config_filename)
 uni.simulate_EXOSIMS_Universe()
 
 planet_table = uni.planets
+full_planet_table = copy.deepcopy(uni.planets)
 #Down select the planets whose separations are less than lambda/D
 min_iwa = np.min(psi_blue.current_wvs)*1e-6/tmt.diameter*206265
 planet_table = planet_table[planet_table['AngSep']/1000 > min_iwa]
+planet_table = planet_table[planet_table['Flux Ratio'] > 1e-10]
 n_planets = len(planet_table)
 
 planet_types = []
@@ -46,6 +49,7 @@ model_wvs = np.linspace(model_wv_low, model_wv_high, n_model_wv) #Choose some wa
 
 print("\n Starting to generate planet spectra")
 for planet in planet_table[rand_planets]:
+
     #INSERT PLANET SELECTION RULES HERE
     planet_type = "Gas"
     planet_types.append(planet_type)
@@ -62,15 +66,17 @@ for planet in planet_table[rand_planets]:
 print("Done generating planet spectra")
 print("\n Starting to simulate observations")
 
-######################## Plot Yield ######################
+planet_spectra = np.array(planet_spectra)
 
+######################## Plot Yield ######################
 post_processing_gain=1000
 sim_F_lambda, sim_F_lambda_errs,sim_F_lambda_stellar, noise_components = observation.simulate_observation_set(tmt, psi_blue,
 	planet_table[rand_planets], planet_spectra, model_wvs, intermediate_R, inject_noise=False,
 	post_processing_gain=post_processing_gain,return_noise_components=True)
 
-speckle_noises = np.array([s[0] for s in noise_components])
-photon_noises = np.array([s[3] for s in noise_components])
+
+speckle_noises = noise_components[:,0,:]
+photon_noises = noise_components[:,3,:]
 
 flux_ratios = sim_F_lambda/sim_F_lambda_stellar
 detection_limits = sim_F_lambda_errs/sim_F_lambda_stellar
@@ -90,6 +96,24 @@ ax.text(4e-2,0.5e-5,"Planets not detected: {}".format(len(np.where(~detected[:,w
 ax.text(4e-2,0.25e-5,"Post-processing gain: {}".format(post_processing_gain),color='k')
 
 
+######################## Save things ######################
+planet_table.write("planet_table.csv")
+ps_hdu = fits.PrimaryHDU(planet_spectra)
+ps_hdu.writeto("planet_spectra.fits",overwrite=True)
+flux_hdu = fits.PrimaryHDU([sim_F_lambda, sim_F_lambda_errs,np.array(sim_F_lambda_stellar)])
+flux_hdu.writeto("Observation_set.fits",overwrite=True)
+noise_components_hdu = fits.PrimaryHDU(noise_components)
+noise_components_hdu.writeto("noise_components.fits",overwrite=True)
+
+# #HOWTO: Read things back in
+# from astropy.io import ascii
+# planet_table = ascii.read("planet_table.csv")
+# planet_spectra = fits.open("planet_spectra.fits")[0].data
+# tmp = fits.open("Observation_set.fits")[0].data
+# sim_F_lambda = tmp[0]
+# sim_F_lambda_errs = tmp[1]
+# sim_F_lambda_stellar = tmp[2]
+# noise_components = fits.open("noise_components.fits")[0].data
 ######################## Plot Cloud vs. Clear ######################
 
 
@@ -125,5 +149,3 @@ plt.legend()
 plt.tight_layout()
 
 plt.show()
-
-import pdb; pdb.set_trace()
