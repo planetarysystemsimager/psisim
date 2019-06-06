@@ -139,9 +139,6 @@ fig = plt.figure()
 plt.errorbar(psi_blue.current_wvs*1000, clear_F_lambda, yerr=clear_F_lambda_errs, color='Blue', marker='o', linestyle='none', label="Clear", zorder=1)
 plt.errorbar(psi_blue.current_wvs*1000, cloudy_F_lambda, yerr=cloudy_F_lambda_errs, color='Gray', marker='o', linestyle='none', label="Cloudy", zorder=1)
 
-plt.plot(model_wvs*1000, planet_spectrum_clear, color='Blue', linestyle='-', alpha=0.5, zorder=0)
-plt.plot(model_wvs*1000, planet_spectra[bestsnr], color='Gray', linestyle='-', alpha=0.5, zorder=0)
-
 
 plt.grid()
 plt.xlabel("Wavelength (nm)")
