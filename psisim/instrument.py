@@ -167,6 +167,9 @@ class PSI_Blue(Instrument):
                 " as 'si or 'lp")
 
 
+        #### HARDCODE integrator to be 'si' ####
+        integrator = 'si'
+
         #Find all the contrast files
         fnames = glob.glob(contrast_dir+"*"+integrator+"_profile.dat")
 
@@ -214,6 +217,12 @@ class PSI_Blue(Instrument):
 
         for i,wv in enumerate(wvs):
             speckle_noise[:,i] = interpolated_contrasts*(0.8/wv)**2
+
+        if self.ao_algo == 'lp':
+            # Olivier said that realistically we can expect a gain of ~5 within the AO Control radius. 
+            # Here I'm being lazy and just applying it across the board
+
+            speckle_noise /= 5
 
         return speckle_noise
 
