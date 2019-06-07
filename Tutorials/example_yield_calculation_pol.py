@@ -1,3 +1,7 @@
+########### NOT CURRENTLY WORKING!! ########
+
+
+
 from psisim import telescope,instrument,observation,spectrum,universe,plots
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,6 +16,9 @@ uni = universe.ExoSims_Universe(exosims_config_filename)
 uni.simulate_EXOSIMS_Universe()
 
 planet_table = uni.planets
+planet_table = planet_table[planet_table['AngSep']/1000 > min_iwa]
+planet_table = planet_table[planet_table['Flux Ratio'] > 1e-10]
+
 n_planets = len(planet_table)
 
 planet_types = []
