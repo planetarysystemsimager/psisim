@@ -53,9 +53,9 @@ def plot_detected_planet_contrasts(planet_table,wv_index,detected,flux_ratios,in
 
     #Plot 1 and 2 lambda/d
     ax.plot([instrument.current_wvs[wv_index]*1e-6/telescope.diameter*206265,instrument.current_wvs[wv_index]*1e-6/telescope.diameter*206265],
-        [0,1.],label=r"$\lambda/D$ at $\lambda=${}$\mu m$".format(instrument.current_wvs[wv_index]),color='k')
+        [0,1.],label=r"$\lambda/D$ at $\lambda=${:.3f}$\mu m$".format(instrument.current_wvs[wv_index]),color='k')
     ax.plot([2*instrument.current_wvs[wv_index]*1e-6/telescope.diameter*206265,2*instrument.current_wvs[wv_index]*1e-6/telescope.diameter*206265],
-        [0,1.],'-.',label=r"$2\lambda/D$ at $\lambda=${}$\mu m$".format(instrument.current_wvs[wv_index]),color='k')
+        [0,1.],'-.',label=r"$2\lambda/D$ at $\lambda=${:.3f}$\mu m$".format(instrument.current_wvs[wv_index]),color='k')
 
 
     #If detection_limits is passed, then plot the 5-sigma detection limits for each source
@@ -66,14 +66,14 @@ def plot_detected_planet_contrasts(planet_table,wv_index,detected,flux_ratios,in
             ax.plot([sep,sep],[flux_ratios[i,wv_index],alt_data[i,wv_index]],color='k',alpha=0.1,linewidth=1)
 
     #Axis title
-    ax.set_title("Planet Detection Yield at {}um".format(instrument.current_wvs[wv_index]))
+    ax.set_title("Planet Detection Yield at {:.3}um".format(instrument.current_wvs[wv_index]),fontsize=18)
 
     #Legend
-    ax.legend(loc='upper right')
+    ax.legend(loc='upper right',fontsize=13)
 
     #Plot setup
-    ax.set_ylabel("Total Intensity Flux Ratio")
-    ax.set_xlabel("Separation ['']")
+    ax.set_ylabel("Total Intensity Flux Ratio",fontsize=16)
+    ax.set_xlabel("Separation ['']",fontsize=16)
     # ax.set_xlim(xmin,xmax)
     ax.set_ylim(ymin,ymax)
     ax.set_yscale('log')
@@ -91,3 +91,37 @@ def plot_detected_planet_contrasts(planet_table,wv_index,detected,flux_ratios,in
 
     #Return the figure so that the user can manipulate it more if they so please
     return fig,ax
+
+
+def plot_detected_planet_mass(planet_table,detected,show=True,**kwargs):
+    '''
+    Plot a histogram of detected and non-detected planets
+    '''
+
+    masses = [planet_table_entry['PlanetMass'] for planet_table_entry in planet_table]
+
+    fig = plt.figure(figsize=(7,4)) 
+    ax1 = fig.add_subplot(111)
+    ax1.hist(masses[~detected],label="Non-Detections",density=True,**kwargs)
+    ax1.hist(masses[detected],label="Detections",density=True,**kwargs)
+    ax1.set_xlabel(r"Planet Masses [M$_{Earth}$]")
+    ax1.set_ylabel(r"Number of Planets")
+    ax1.set_xscale("log")
+
+def plot_detected_planet_mass(planet_table,detected,show=True,**kwargs):
+    '''
+    Plot a histogram of detected and non-detected planets
+    '''
+
+    masses = [planet_table_entry['PlanetMass'] for planet_table_entry in planet_table]
+
+    fig = plt.figure(figsize=(7,4)) 
+    ax1 = fig.add_subplot(111)
+    ax1.hist(masses[~detected],label="Non-Detections",density=True,**kwargs)
+    ax1.hist(masses[detected],label="Detections",density=True,**kwargs)
+    ax1.set_xlabel(r"Planet Masses [M$_{Earth}$]")
+    ax1.set_ylabel(r"Number of Planets")
+    ax1.set_xscale("log")
+
+
+
