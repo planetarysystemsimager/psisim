@@ -14,13 +14,16 @@ uni.simulate_EXOSIMS_Universe()
 
 planet_table = uni.planets
 planet_table = planet_table[np.where(planet_table['PlanetMass'] > 10)]
+planet_table = planet_table[planet_table['AngSep']/1000 > min_iwa]
+planet_table = planet_table[planet_table['Flux Ratio'] > 1e-10]
+
 n_planets = len(planet_table)
 
 planet_types = []
 planet_spectra = []
 planet_ages = []
 
-n_planets_now = 100
+n_planets_now = 2000
 rand_planets = np.random.randint(0, n_planets, n_planets_now)
 
 ########### Model spectrum wavelength choice #############
