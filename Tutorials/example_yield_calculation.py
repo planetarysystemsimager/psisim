@@ -24,7 +24,7 @@ n_planets = len(planet_table)
 planet_types = []
 planet_spectra = []
 
-n_planets_now = 2
+n_planets_now = 2000
 #We'll pick random planets, since many systems are multi-planet systems and they show up 
 #sequentially in EXOSIMS
 rand_planets = np.random.randint(0, n_planets, n_planets_now)
@@ -69,12 +69,13 @@ print("\n Starting to simulate observations")
 planet_spectra = np.array(planet_spectra)
 
 ######################## Plot Yield ######################
-post_processing_gain=1000
+post_processing_gain=100
 sim_F_lambda, sim_F_lambda_errs,sim_F_lambda_stellar, noise_components = observation.simulate_observation_set(tmt, psi_blue,
 	planet_table[rand_planets], planet_spectra, model_wvs, intermediate_R, inject_noise=False,
 	post_processing_gain=post_processing_gain,return_noise_components=True)
 
-
+# import pdb; pdb.set_trace()
+noise_components = np.array(noise_components)
 speckle_noises = noise_components[:,0,:]
 photon_noises = noise_components[:,3,:]
 
@@ -85,16 +86,20 @@ snrs = sim_F_lambda/sim_F_lambda_errs
 detected = psi_blue.detect_planets(planet_table[rand_planets],snrs,tmt)
 
 #Choose which wavelength you want to plot the detections at:
-wv_index = 10
+wv_index = 20
 fig, ax = plots.plot_detected_planet_contrasts(planet_table[rand_planets],wv_index,
-	detected,flux_ratios,psi_blue,tmt,ymin=1e-13,alt_data=5*detection_limits,alt_label=r"5-$\sigma$ Detection Limits", show=False)
+	detected,flux_ratios,psi_blue,tmt,ymin=1e-13,alt_label=r"5-$\sigma$ Detection Limits", show=False)
 
 #The user can now adjust the plot as they see fit. 
 #e.g. Annotate the plot
-ax.text(4e-2,1e-5,"Planets detected: {}".format(len(np.where(detected[:,wv_index])[0])),color='k')
-ax.text(4e-2,0.5e-5,"Planets not detected: {}".format(len(np.where(~detected[:,wv_index])[0])),color='k')
-ax.text(4e-2,0.25e-5,"Post-processing gain: {}".format(post_processing_gain),color='k')
-
+# ax.text(2e-2,1e-5,"Planets detected: {}".format(len(np.where(detected[:,wv_index])[0])),color='k')
+# ax.text(2e-2,0.5e-5,"Planets not detected: {}".format(len(np.where(~detected[:,wv_index])[0])),color='k')
+# ax.text(2e-2,0.25e-5,"Post-processing gain: {}".format(post_processing_gain),color='k')
+ax.tick_params(axis='both', which='major', labelsize=10)
+ax.set_xlim(4e-3,3)
+ax.set_ylim(5e-12,5e-6)
+ax.tick_params(axis='both', which='major', labelsize=16)
+plt.tight_layout()
 
 ######################## Save things ######################
 planet_table.write("planet_table.csv")
