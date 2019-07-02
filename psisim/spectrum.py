@@ -18,7 +18,9 @@ bex_labels = ['Age', 'Mass', 'Radius', 'Luminosity', 'Teff', 'Logg', 'NACOJ', 'N
 bex_cloudy_mh0 = {}
 bex_clear_mh0 = {}
 
-opacity = jdi.opannection()
+opacity_folder = os.path.join(os.path.dirname(picaso.__file__), '..', 'reference', 'opacities')
+dbname = "opacity_LR.db"
+opacity = jdi.opannection(os.path.join(opacity_folder, dbname))
 
 def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True, planet_mh=1, stellar_mh=0.0122, planet_teq=None, verbose=False):
     '''
@@ -43,13 +45,16 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True, planet_
         print("Only planet_type='Jupiter' spectra are currently implemented")
         print("Generating a Jupiter-like spectrum")
 
-    params = jdi.inputs()
+    params = jdi.inputs(chemeq=True)
+    params.approx(raman='none')
 
     #phase angle
     params.phase_angle(planet_table_entry['Phase']) #radians
 
     #define gravity
-    params.gravity(gravity=10**planet_table_entry['PlanetLogg'], gravity_unit=u.Unit('cm/(s**2)'), mass=planet_table_entry['PlanetMass'], mass_unit=u.earthMass) #any astropy units available
+    params.gravity(gravity=10**planet_table_entry['PlanetLogg'], gravity_unit=u.Unit('cm/(s**2)'), 
+                    mass=planet_table_entry['PlanetMass'], mass_unit=u.earthMass,
+                    radius=planet_table_entry['PlanetMass'], radius_unit=u.earthRad) #any astropy units available
 
     #The current stellar models do not like log g > 5, so we'll force it here for now. 
     star_logG = planet_table_entry['StarLogg']
@@ -105,7 +110,7 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         model_R = model_wvs/model_dwvs
 
         highres_fp_reflected =  model_alb * (planet_table_entry['PlanetRadius']*u.earthRad.to(u.au)/planet_table_entry['SMA'])**2 # flux ratio relative to host star
-        highres_fp = highres_fp + fp_thermal
+        highres_fp = highres_fp_reflected + fp_thermal
 
         lowres_fp = downsample_spectrum(highres_fp, np.mean(model_R), R)
 
