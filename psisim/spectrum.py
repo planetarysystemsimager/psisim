@@ -20,7 +20,7 @@ bex_clear_mh0 = {}
 
 opacity = jdi.opannection()
 
-def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True,verbose=False):
+def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True, planet_mh=1, stellar_mh=0.0122, planet_teq=None, verbose=False):
     '''
     A function that returns the required inputs for picaso, 
     given a row from a universe planet table
@@ -30,6 +30,9 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True,verbose=
                             from a universe planet table [astropy table (or maybe astropy row)]
     planet_type - either "Terrestrial", "Ice" or "Gas" [string]
     clouds - cloud parameters. For now, only accept True/False to turn clouds on and off
+    planet_mh - planetary metalicity. 1 = 1x Solar
+    stellar_mh - stellar metalicity
+    planet_teq - planet's equilibrium temperature. If None, esimate using blackbody equilibrium temperature
 
     Outputs:
     params - picaso.justdoit.inputs class
@@ -46,7 +49,7 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True,verbose=
     params.phase_angle(planet_table_entry['Phase']) #radians
 
     #define gravity
-    params.gravity(gravity=10**planet_table_entry['PlanetLogg'], gravity_unit=u.Unit('cm/(s**2)')) #any astropy units available
+    params.gravity(gravity=10**planet_table_entry['PlanetLogg'], gravity_unit=u.Unit('cm/(s**2)'), mass=planet_table_entry['PlanetMass'], mass_unit=u.earthMass) #any astropy units available
 
     #The current stellar models do not like log g > 5, so we'll force it here for now. 
     star_logG = planet_table_entry['StarLogg']
@@ -58,11 +61,16 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True,verbose=
         star_Teff = 3500
         
     #define star
-    params.star(opacity, star_Teff, 0, star_logG) #opacity db, pysynphot database, temp, metallicity, logg
+    params.star(opacity, star_Teff, stellar_mh, star_logG, radius=planet_table_entry['StarRad'], radius_unit=u.solRad) #opacity db, pysynphot database, temp, metallicity, logg
 
     # define atmosphere PT profile and mixing ratios. 
-    # Hard coded as Jupiters right now. 
-    params.atmosphere(filename=jdi.jupiter_pt(), delim_whitespace=True)
+    # PT from planetary equilibrium temperature
+    if planet_teq is None:
+        planet_teq = ((planet_table_entry['StarRad'] * u.solRad/(planet_table_entry['SMA'] * u.au)).decompose()**2 * planet_table_entry['StarTeff']**4)**(1./4)
+    params.guillot_pt(planet_teq, 150, -0.5, -1)
+    # get chemistry via chemical equillibrium
+    planet_C_to_O = 0.55 # not currently suggested to change this
+    params.chemeq(planet_C_to_O, planet_mh)
 
     if clouds:
         # use Jupiter cloud deck for now. 
@@ -89,14 +97,15 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         # global opacity
 
         params, _ = atmospheric_parameters
-        model_wnos, model_alb = params.spectrum(opacity)
+        model_wnos, model_alb, fp_thermal = params.spectrum(opacity, calculation='thermal+reflected')
         model_wvs = 1./model_wnos * 1e4 # microns
 
         model_dwvs = np.abs(model_wvs - np.roll(model_wvs, 1))
         model_dwvs[0] = model_dwvs[1]
         model_R = model_wvs/model_dwvs
 
-        highres_fp =  model_alb * (planet_table_entry['PlanetRadius']*u.earthRad.to(u.au)/planet_table_entry['SMA'])**2 # flux ratio relative to host star
+        highres_fp_reflected =  model_alb * (planet_table_entry['PlanetRadius']*u.earthRad.to(u.au)/planet_table_entry['SMA'])**2 # flux ratio relative to host star
+        highres_fp = highres_fp + fp_thermal
 
         lowres_fp = downsample_spectrum(highres_fp, np.mean(model_R), R)
 
