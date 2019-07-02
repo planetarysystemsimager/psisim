@@ -73,8 +73,8 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True, planet_
     params.chemeq(planet_C_to_O, planet_mh)
 
     if clouds:
-        # use Jupiter cloud deck for now. 
-        params.clouds( filename= jdi.jupiter_cld(), delim_whitespace=True)
+        # may need to consider tweaking these for reflected light
+        params.clouds( g0=[0.9], w0=[0.99], opd=[0.5], p = [1e-3], dp=[5])
 
     return (params, opacity)
 
