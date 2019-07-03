@@ -4,6 +4,7 @@ import psisim
 import numpy as np
 import scipy.ndimage as ndi
 import astropy.units as u
+import astropy.constants as consts
 import picaso
 from picaso import justdoit as jdi
 from astropy.io import fits, ascii
@@ -228,6 +229,21 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
             fp = np.ones(wvs.shape) * fp
 
         return fp
+
+    elif package.lower() == "blackbody":
+        a_v = atmospheric_parameters # just albedo
+        pl_teff = ((1 - a_v)/4  * (planet_table_entry['StarRad'] * u.solRad/(planet_table_entry['SMA'] * u.au)).decompose()**2 * planet_table_entry['StarTeff']**4)**(1./4)
+
+        nu = consts.c/(wvs * u.micron) # freq
+        bb_arg_pl = (consts.h * nu/(consts.k_B * pl_teff * u.cds.K)).decompose()
+        bb_arg_star = (consts.h * nu/(consts.k_B * planet_table_entry['StarTeff'] * u.cds.K)).decompose()
+        thermal_flux_ratio = ((planet_table_entry['PlanetRadius'] * u.earthRad)/(planet_table_entry['StarRad'] * u.solRad)).decompose()**2 * np.expm1(bb_arg_star)/np.expm1(bb_arg_pl)
+
+        phi = (np.sin(planet_table_entry['Phase']) + (np.pi - planet_table_entry['Phase'])*np.cos(planet_table_entry['Phase']))/np.pi
+        reflected_flux_ratio = phi * a_v / 4 * (planet_table_entry['PlanetRadius'] * u.earthRad/(planet_table_entry['SMA'] * u.au)).decompose()**2
+
+        print(pl_teff, phi, np.median(thermal_flux_ratio), np.median(reflected_flux_ratio))
+        return thermal_flux_ratio + reflected_flux_ratio
 
 def downsample_spectrum(spectrum,R_in, R_out):
     '''
