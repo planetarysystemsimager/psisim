@@ -56,8 +56,8 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     # Instrument and Sky thermal background in photons/s/cm^2/Angstrom
     thermal_sky = telescope.get_sky_background(wvs)
     thermal_sky *= instrument.get_inst_throughput(wvs)
-    #thermal_inst = instrument.get_instrument_background(wvs) # need to think about this
-    thermal_flux = thermal_sky #+ thermal_inst
+    thermal_inst = instrument.get_instrument_background(wvs) # need to think about this
+    thermal_flux = thermal_sky + thermal_inst
     thermal_flux *= telescope.collecting_area*10000 # phtons/s/Angstrom
     thermal_flux *= instrument.get_filter_transmission(wvs, instrument.current_filter)
     thermal_flux *= instrument.qe #e-/s/Angstrom
