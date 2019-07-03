@@ -5,6 +5,7 @@ import scipy.interpolate as si
 import numpy as np
 import astropy.units as u
 import astropy.constants as constants
+import pysynphot as ps
 
 class Instrument():
     '''
@@ -321,3 +322,50 @@ class PSI_Red(PSI_Blue):
             dwvs = np.abs(wvs - np.roll(wvs, 1))
             dwvs[0] = dwvs[1]
         self.current_dwvs = dwvs
+
+    def get_instrument_background(self,wvs):
+        '''
+        Return the instrument background. 
+
+        Let's use the background limits from Skemer et al. 2018. 
+
+
+        Inputs: 
+        wvs - a list of wavelengths in microns
+
+        Outputs: 
+        backgrounds - a list of background values at a given wavelength. Unit TBD
+        '''
+
+
+        # First we'll get the point source limit in a 1-hour integration, basedd on the 
+        # numbers from Skemer et al. 2018. These numbers likely include both instrument 
+        # background and sky background numbers. For now we're assuming that it's all due
+        # to instrument background until we hear something else. 
+
+        if self.current_R <= 10: 
+            # Assume Imaging
+            point_source_limit = {'K':27.4,'L':21.3,'M':18.7}.get(self.current_filter,18.7) #Assume M-band if something goes wrong
+        elif (self.current_R > 10) & (self.current_R <= 1000):
+            # Low resolution spectroscopy
+            point_source_limit = {'K':25.4,'L':19.5,'M':16.7}.get(self.current_filter,16.7) #Assume M-band if something goes wrong
+        elif (self.current_R > 1000) & (self.current_R <= 20000):
+            # Medium resolution spectrocopy
+            point_source_limit = {'K':23.6,'L':17.7,'M':14.9}.get(self.current_filter,14.9) #Assume M-band if something goes wrong
+        elif (self.current_R > 20000):
+            #High resolution spectroscopy
+            point_source_limit = {'K':22.0,'L':16.1,'M':13.3}.get(self.current_filter,14.9) #Assume M-band if something goes wrong
+
+        #Get the central wavelength (in microns) based on Keck filters
+        cntr_wv = {'K':2.196,'L':3.776,'M':4.670}.get(self.current_filter,4.670)
+        #Now we'll use pysynphot to estimate the number of photons at the given magnitude
+        ps.Vega.convert("photlam")
+        sp = ps.FlatSpectrum(point_source_limit,fluxunits='vegamag')
+
+        ### PICK UP HERE
+
+
+        if isinstance(wvs,float):
+            return 0.
+        else:
+            return np.zeros(len(wvs))
