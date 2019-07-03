@@ -362,10 +362,10 @@ class PSI_Red(PSI_Blue):
         ps.Vega.convert("photlam")
         sp = ps.FlatSpectrum(point_source_limit,fluxunits='vegamag')
 
-        ### PICK UP HERE
-
+        sp.convert('photlam') #Convert to photons/s/cm^2/Angstrom
+        limit = sp(cntr_wv*1e4) #Get the spectrum at the center wavelength (convert cntr_wv to angstrom)
 
         if isinstance(wvs,float):
-            return 0.
+            return limit
         else:
-            return np.zeros(len(wvs))
+            return np.repeat(limit,len(wvs))
