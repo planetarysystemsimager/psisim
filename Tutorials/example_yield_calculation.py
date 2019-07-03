@@ -1,4 +1,5 @@
 from psisim import telescope,instrument,observation,spectrum,universe,plots
+import multiprocessing as mp
 import numpy as np
 import matplotlib.pylab as plt
 import copy
@@ -47,21 +48,39 @@ n_model_wv = int((model_wv_high-model_wv_low)/(dwv_c/2))*2
 #Generate the model wavelenths
 model_wvs = np.linspace(model_wv_low, model_wv_high, n_model_wv) #Choose some wavelengths
 
-print("\n Starting to generate planet spectra")
-for planet in planet_table[rand_planets]:
 
+print("\n Starting to generate planet spectra")
+
+def generate_spectrum(planet):
+    """
+    Function to loop over to generate spectra. 
+    """
     #INSERT PLANET SELECTION RULES HERE
     planet_type = "Gas"
-    planet_types.append(planet_type)
 
     time1 = time.time()
 	#Generate the spectrum and downsample to intermediate resolution
     atmospheric_parameters = spectrum.generate_picaso_inputs(planet,planet_type, clouds=True)
     planet_spectrum = spectrum.simulate_spectrum(planet, model_wvs, intermediate_R, atmospheric_parameters)
-    planet_spectra.append(planet_spectrum)
     
     time2 = time.time()
     print('Spectrum took {0:.3f} s'.format((time2-time1)))
+
+    return planet_type, planet_spectrum
+### Non parallel Code 
+# for planet in planet_table[rand_planets]:
+#     planet_type, planet_spectrum = generate_spectrum(planet)
+#     planet_types.append(planet_type)
+#     planet_spectra.append(planet_spectrum)
+
+### Parallel Code
+pool = mp.Pool(processes=2) # pick the number of processes you want to use
+outputs = pool.map(generate_spectrum, planet_table[rand_planets])
+
+for planet_type, planet_spectrum in outputs:
+    planet_types.append(planet_type)
+    planet_spectra.append(planet_spectrum)
+
 
 print("Done generating planet spectra")
 print("\n Starting to simulate observations")
