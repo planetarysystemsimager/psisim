@@ -242,7 +242,7 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         phi = (np.sin(planet_table_entry['Phase']) + (np.pi - planet_table_entry['Phase'])*np.cos(planet_table_entry['Phase']))/np.pi
         reflected_flux_ratio = phi * a_v / 4 * (planet_table_entry['PlanetRadius'] * u.earthRad/(planet_table_entry['SMA'] * u.au)).decompose()**2
 
-        print(pl_teff, phi, np.median(thermal_flux_ratio), np.median(reflected_flux_ratio))
+        # print(pl_teff, phi, np.median(thermal_flux_ratio), np.median(reflected_flux_ratio))
         return thermal_flux_ratio + reflected_flux_ratio
 
 def downsample_spectrum(spectrum,R_in, R_out):
