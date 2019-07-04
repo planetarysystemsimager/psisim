@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.colors as colors
 
 def make_plots():
     '''
@@ -47,9 +48,14 @@ def plot_detected_planet_contrasts(planet_table,wv_index,detected,flux_ratios,in
         marker='.',label="Full Sample",s=20)
 
     # print(seps[~detected[:,wv_index]],flux_ratios[:,wv_index][~detected[:,wv_index]])
+    masses = np.array([float(planet_table_entry['PlanetMass']) for planet_table_entry in planet_table])
+    # import pdb; pdb.set_trace()
 
+    # import pdb; pdb.set_trace()
     #Plot the detections
-    ax.scatter(seps[detected[:,wv_index]],flux_ratios[:,wv_index][detected[:,wv_index]],marker='o',label="Detected",color='r')
+    scat = ax.scatter(seps[detected[:,wv_index]],flux_ratios[:,wv_index][detected[:,wv_index]],marker='o',
+        label="Detected",c=masses[detected[:,wv_index]],cmap='gist_heat',edgecolors='k',norm=colors.LogNorm(vmin=1,vmax=1000))
+    fig.colorbar(scat,label=r"Planet Mass [$M_{\oplus}$]",ax=ax)
 
     #Plot 1 and 2 lambda/d
     ax.plot([instrument.current_wvs[wv_index]*1e-6/telescope.diameter*206265,instrument.current_wvs[wv_index]*1e-6/telescope.diameter*206265],
@@ -69,7 +75,9 @@ def plot_detected_planet_contrasts(planet_table,wv_index,detected,flux_ratios,in
     ax.set_title("Planet Detection Yield at {:.3}um".format(instrument.current_wvs[wv_index]),fontsize=18)
 
     #Legend
-    ax.legend(loc='upper right',fontsize=13)
+    legend = ax.legend(loc='upper right',fontsize=13)
+    legend.legendHandles[-1].set_color('orangered')
+    legend.legendHandles[-1].set_edgecolor('k')
 
     #Plot setup
     ax.set_ylabel("Total Intensity Flux Ratio",fontsize=16)
