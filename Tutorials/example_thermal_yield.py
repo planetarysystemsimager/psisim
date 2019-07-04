@@ -12,6 +12,7 @@ exosims_config_filename = "forBruceandDimitri_EXOCAT1.json" #Some filename here
 uni = universe.ExoSims_Universe(exosims_config_filename)
 uni.simulate_EXOSIMS_Universe()
 
+min_iwa = np.min(psi_red.current_wvs)*1e-6/tmt.diameter*206265
 planet_table = uni.planets
 planet_table = planet_table[np.where(planet_table['PlanetMass'] > 10)]
 planet_table = planet_table[planet_table['AngSep']/1000 > min_iwa]
@@ -23,7 +24,7 @@ planet_types = []
 planet_spectra = []
 planet_ages = []
 
-n_planets_now = 2000
+n_planets_now = n_planets
 rand_planets = np.random.randint(0, n_planets, n_planets_now)
 
 ########### Model spectrum wavelength choice #############
@@ -54,9 +55,16 @@ for planet in planet_table[rand_planets]:
     planet_ages.append(age)
 
     time1 = time.time()
-	#Generate the spectrum and downsample to intermediate resolution
+
+    #Here we're going to generate the spectrum as the addition of cooling models and a blackbody (i.e. equilibrium Temperature)
+	#Generate the spectrum from cooling models and downsample to intermediate resolution
     atmospheric_parameters = age, 'M', True
     planet_spectrum = spectrum.simulate_spectrum(planet, model_wvs, intermediate_R, atmospheric_parameters, package='bex-cooling')
+
+    #The bond albedo
+    atmospheric_parameters = 0.5
+    planet_spectrum += np.array(spectrum.simulate_spectrum(planet, model_wvs, intermediate_R, atmospheric_parameters, package='blackbody'))
+
     planet_spectra.append(planet_spectrum)
     
     time2 = time.time()
@@ -81,14 +89,18 @@ detected = psi_red.detect_planets(planet_table[rand_planets],snrs,tmt)
 
 #Choose which wavelength you want to plot the detections at:
 wv_index = 1
+
 fig, ax = plots.plot_detected_planet_contrasts(planet_table[rand_planets],wv_index,
-	detected,flux_ratios,psi_red,tmt,ymin=1e-13,alt_data=5*detection_limits,alt_label=r"5-$\sigma$ Detection Limits", show=False)
+    detected,flux_ratios,psi_red,tmt,ymin=1e-8, ymax=1e-1,show=False)
 
 #The user can now adjust the plot as they see fit. 
 #e.g. Annotate the plot
-ax.text(4e-2,1e-5,"Planets detected: {}".format(len(np.where(detected[:,wv_index])[0])),color='k')
-ax.text(4e-2,0.5e-5,"Planets not detected: {}".format(len(np.where(~detected[:,wv_index])[0])),color='k')
-ax.text(4e-2,0.25e-5,"Post-processing gain: {}".format(post_processing_gain),color='k')
+# ax.text(4e-2,1e-5,"Planets detected: {}".format(len(np.where(detected[:,wv_index])[0])),color='k')
+# ax.text(4e-2,0.5e-5,"Planets not detected: {}".format(len(np.where(~detected[:,wv_index])[0])),color='k')
+# ax.text(4e-2,0.25e-5,"Post-processing gain: {}".format(post_processing_gain),color='k')
+print("Planets detected: {}".format(len(np.where(detected[:,wv_index])[0])))
+print("Planets not detected: {}".format(len(np.where(~detected[:,wv_index])[0])))
+print("Post-processing gain: {}".format(post_processing_gain))
 
 
 
