@@ -56,17 +56,24 @@ def generate_spectrum(planet):
     Function to loop over to generate spectra. 
     """
     #INSERT PLANET SELECTION RULES HERE
-    planet_type = "Gas"
-
-    time1 = time.time()
-	#Generate the spectrum and downsample to intermediate resolution
-    atmospheric_parameters = spectrum.generate_picaso_inputs(planet,planet_type, clouds=True)
-    planet_spectrum = spectrum.simulate_spectrum(planet, model_wvs, intermediate_R, atmospheric_parameters)
-    
-    time2 = time.time()
-    print('Spectrum took {0:.3f} s'.format((time2-time1)))
+    if planet["PlanetMass"] <= 17: #Planet masses in Earth Masses
+        #If Neptune or less, we'll just use the Exosims Flux Ratio for now at all wavelengths. 
+        #Later this will also use PICASO once we learn how to use it better
+        planet_type = "Exosims"
+        planet_spectrum = np.repeat(planet['Flux Ratio'],len(model_wvs))
+        
+    else:
+        planet_type = "Gas"
+        time1 = time.time()
+    	#Generate the spectrum and downsample to intermediate resolution
+        atmospheric_parameters = spectrum.generate_picaso_inputs(planet,planet_type, clouds=True)
+        planet_spectrum = spectrum.simulate_spectrum(planet, model_wvs, intermediate_R, atmospheric_parameters)
+        
+        time2 = time.time()
+        print('Spectrum took {0:.3f} s'.format((time2-time1)))
 
     return planet_type, planet_spectrum
+
 ### Non parallel Code 
 # for planet in planet_table[rand_planets]:
 #     planet_type, planet_spectrum = generate_spectrum(planet)
@@ -121,7 +128,7 @@ ax.tick_params(axis='both', which='major', labelsize=16)
 plt.tight_layout()
 
 ######################## Save things ######################
-planet_table.write("planet_table.csv")
+planet_table[rand_planets].write("planet_table.csv")
 ps_hdu = fits.PrimaryHDU(planet_spectra)
 ps_hdu.writeto("planet_spectra.fits",overwrite=True)
 flux_hdu = fits.PrimaryHDU([sim_F_lambda, sim_F_lambda_errs,np.array(sim_F_lambda_stellar)])
