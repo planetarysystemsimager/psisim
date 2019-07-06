@@ -100,6 +100,129 @@ def plot_detected_planet_contrasts(planet_table,wv_index,detected,flux_ratios,in
     #Return the figure so that the user can manipulate it more if they so please
     return fig,ax
 
+def plot_detected_planet_magnitudes(planet_table,wv_index,detected,flux_ratios,instrument,telescope,
+    show=True,save=False,ymin=1,ymax=30,xmin=0.,xmax=1.,alt_data=None,alt_label=""):
+    '''
+    Make a plot of the planets detected at a given wavelenth_index
+
+    Inputs: 
+        planet_table    - a Universe.planets table
+        wv_index        - the index from the instrument.current_wvs 
+                            wavelength array to consider
+        detected        - a boolean array of shape [n_planets,n_wvs] 
+                        that indicates whether or not a planet was detected 
+                        at a given wavelength
+        flux_ratios     - an array of flux ratios between the planet and the star
+                        at the given wavelength. sape [n_planets,n_wvs]
+        instuemnt       - an instance of the psisim.instrument class
+        telescope       - an instance of the psisim.telescope class
+
+    Keyword Arguments: 
+        show            - do you want to show the plot? Boolean
+        save            - do you want to save the plot? Boolean
+        ymin,ymax,xmin,xmax - the limits on the plot
+        alt_data        - An optional argument to pass to show a secondary set of data.
+                        This could be e.g. detection limits, or another set of atmospheric models
+        alt_label       - This sets the legend label for the alt_data
+    '''
+
+
+    fig,ax = plt.subplots(1,1,figsize=(7,5))
+
+    #convert flux ratios to delta_mags
+    dMags = -2.5*np.log10(flux_ratios[:,wv_index])    
+
+    band = instrument.current_filter
+    if band == 'R':
+        bexlabel = 'CousinsR'
+        starlabel = 'StarRmag'
+    elif band == 'I':
+        bexlabel = 'CousinsI'
+        starlabel = 'StarImag'
+    elif band == 'J':
+        bexlabel = 'SPHEREJ'
+        starlabel = 'StarJmag'
+    elif band == 'H':
+        bexlabel = 'SPHEREH'
+        starlabel = 'StarHmag'
+    elif band == 'K':
+        bexlabel = 'SPHEREKs'
+        starlabel = 'StarKmag'
+    elif band == 'L':
+        bexlabel = 'NACOLp'
+        starlabel = 'StarKmag'
+    elif band == 'M':
+        bexlabel = 'NACOMp'
+        starlabel = 'StarKmag'
+    else:
+        raise ValueError("Band needs to be 'R', 'I', 'J', 'H', 'K', 'L', 'M'. Got {0}.".format(band))
+
+    stellar_mags = planet_table[starlabel]
+    stellar_mags = np.array(stellar_mags)
+
+    planet_mag = stellar_mags+dMags
+    # import pdb;pdb.set_trace()
+
+    seps = np.array([planet_table_entry['AngSep']/1000 for planet_table_entry in planet_table])
+    
+    # import pdb; pdb.set_trace()
+    #Plot the non-detections
+    ax.scatter(seps[~detected[:,wv_index]],planet_mag[:][~detected[:,wv_index]],
+        marker='.',label="Full Sample",s=20)
+
+    # print(seps[~detected[:,wv_index]],flux_ratios[:,wv_index][~detected[:,wv_index]])
+    masses = np.array([float(planet_table_entry['PlanetMass']) for planet_table_entry in planet_table])
+    # import pdb; pdb.set_trace()
+
+    # import pdb; pdb.set_trace()
+    #Plot the detections
+    scat = ax.scatter(seps[detected[:,wv_index]],planet_mag[:][detected[:,wv_index]],marker='o',
+        label="Detected",c=masses[detected[:,wv_index]],cmap='gist_heat',edgecolors='k',norm=colors.LogNorm(vmin=1,vmax=1000))
+    fig.colorbar(scat,label=r"Planet Mass [$M_{\oplus}$]",ax=ax)
+
+    import pdb; pdb.set_trace()
+
+    #Plot 1 and 2 lambda/d
+    ax.axvline(instrument.current_wvs[wv_index]*1e-6/telescope.diameter*206265,color='k',)
+    ax.axvline(2*instrument.current_wvs[wv_index]*1e-6/telescope.diameter*206265,color='k',linestyle='--')
+
+    ax.axhline(18.7+0.4,color='r',linestyle='-.',label="")
+    
+    #If detection_limits is passed, then plot the 5-sigma detection limits for each source
+    if alt_data is not None:
+        ax.scatter(seps,alt_data[:,wv_index],marker='.',
+            label=alt_label,color='darkviolet',s=20)
+        for i,sep in enumerate(seps):
+            ax.plot([sep,sep],[flux_ratios[i,wv_index],alt_data[i,wv_index]],color='k',alpha=0.1,linewidth=1)
+
+    #Axis title
+    ax.set_title("Planet Detection Yield at {:.3}um".format(instrument.current_wvs[wv_index]),fontsize=18)
+
+    #Legend
+    legend = ax.legend(loc='upper right',fontsize=13)
+    legend.legendHandles[-1].set_color('orangered')
+    legend.legendHandles[-1].set_edgecolor('k')
+
+    #Plot setup
+    ax.set_ylabel(r"Planet Magnitude at {:.1f}$\mu m$".format(instrument.current_wvs[wv_index]),fontsize=16)
+    ax.set_xlabel("Separation ['']",fontsize=16)
+    # ax.set_xlim(xmin,xmax)
+    ax.set_ylim(ymin,ymax)
+    # ax.set_yscale('log')
+    ax.set_xscale('log')
+
+    #Do we show it?
+    if show:
+        plt.show()
+    
+    plt.tight_layout()
+
+    #Do we save it? 
+    if save:
+        plt.savefig("Detected_Planets_flux_v_sma.png",bbox_inches="tight")
+
+    #Return the figure so that the user can manipulate it more if they so please
+    return fig,ax
 
 def plot_detected_planet_mass(planet_table,detected,show=True,**kwargs):
     '''
