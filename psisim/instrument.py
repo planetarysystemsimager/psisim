@@ -45,9 +45,9 @@ class Instrument():
         '''
 
         if isinstance(wvs,float):
-            return 0.15
+            return 0.075
         else:
-            return np.ones(len(wvs))*0.15
+            return np.ones(len(wvs))*0.075
 
     def get_filter_transmission(self,wvs,filter_name):
         '''
