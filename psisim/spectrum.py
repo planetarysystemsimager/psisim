@@ -55,7 +55,7 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True, planet_
     #define gravity
     params.gravity(gravity=10**planet_table_entry['PlanetLogg'], gravity_unit=u.Unit('cm/(s**2)'), 
                     mass=planet_table_entry['PlanetMass'], mass_unit=u.earthMass,
-                    radius=planet_table_entry['PlanetMass'], radius_unit=u.earthRad) #any astropy units available
+                    radius=planet_table_entry['PlanetRad'], radius_unit=u.earthRad) #any astropy units available
 
     #The current stellar models do not like log g > 5, so we'll force it here for now. 
     star_logG = planet_table_entry['StarLogg']
