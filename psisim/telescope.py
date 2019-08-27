@@ -113,3 +113,80 @@ class TMT(Telescope):
             backgrounds = backgrounds[0]
 
         return backgrounds
+
+class Keck(Telescope):
+    '''
+    An implementation of the Telescope class
+    '''
+    def __init__(self):
+        super(Keck, self).__init__(9.85*u.m,collecting_area=)
+
+        self.temperature = 276 * u.K
+
+
+    def get_sky_background(self ,wvs):
+        '''
+        A function that returns the sky background for a given set of wavelengths. 
+
+        Later it might be a function of pressure, temperature and humidity
+
+        Inputs: 
+        wvs     - A list of wavelengths 
+
+        Outputs: 
+        backgrounds - A list of backgrounds
+        '''
+        returnfloat = False
+        if isinstance(wvs, (float, int)):
+            returnfloat = True
+            wvs = np.array([wvs])
+        
+        # H band and shorter, just assume background is negligible. For now...
+        backgrounds = np.zeros(wvs.shape)
+
+        # Hack where I grabbed these from Allen's Astrophysical Quantities on sky brightness
+        # Very approximate step function. 
+        backgrounds[np.where((wvs > 1.8) & (wvs <= 2.3))] = 1e-6 # W/m^2/sr/um
+        backgrounds[np.where((wvs > 2.3) & (wvs <= 4))] = 1e-2 # W/m^2/sr/um
+        backgrounds[np.where(wvs > 4)] = 0.8 # W/m^2/sr/um
+
+        # convert to photons/s/cm^2/angstrom
+        diff_size = wvs * u.micron.to(u.m) / self.diameter # radians
+        psf_area = np.pi * (diff_size/2)**2 # sr
+
+        backgrounds *= (u.W / (constants.h * constants.c / (wvs * u.micron))).decompose().value * (u.m**-2/u.micron).to(u.cm**-2/u.angstrom) * psf_area
+
+        if returnfloat:
+            backgrounds = backgrounds[0]
+
+        return backgrounds
+
+    def get_telescope_throughput(self,band):
+        '''
+        Get Telescope throughput for a given observing band. 
+
+        Currently only Y,J,H and K are supported, otherwise 0.88 is returned. 
+
+        Args:
+            band (str): A photometric band. 
+        
+        '''
+
+
+        throughput = {'Y':0.88,'J':0.88,'H':0.88,'K':0.88}.get(band,0.88)
+        
+        return throughput
+    
+    def get_telescope_emissivity(self,band):
+        '''
+        Get Telescope emissivity for a given observing band. 
+
+        Currently only Y,J,H and K are supported, otherwise 1-0.88 is returned. 
+
+        Args:
+            band (str): A photometric band. 
+        
+        '''
+        emissivity = 1-self.get_telescope_throughput(band)
+
+        return emissivity

@@ -369,3 +369,48 @@ class PSI_Red(PSI_Blue):
             return limit[0]
         else:
             return np.repeat(limit,len(wvs))
+
+class hispec(Instrument):
+    '''
+    An implementation of Instrument for Hispec
+    '''
+
+    def init(self):
+        super(hispec,self).init()
+
+        # The main instrument properties - static
+        self.read_noise = 3 # * u.photon#e-/pix/fr
+        self.dark_current = 0.02*u.photon/u.s #photon/
+        self.det_welldepth = 1e5 *u.photon
+        self.det_linearity = 0.66*det_welldepth
+        self.qe = 0.95
+        self.temperature = 276*u.K
+
+        #Acceptable filters
+        self.filters = ['Y','J','H','K']
+
+        # The current obseving properties - We'll keep these fixed
+        self.current_R = 1e5
+
+        # The current obseving properties - dynamic
+        self.exposure_time = None
+        self.n_exposures = None
+        self.current_filter = None
+        self.current_wvs = None
+        self.current_dwvs = None
+    
+    def get_inst_throughput(self,wvs):
+        '''
+        To be filled in
+        '''
+    
+
+class modhis(Instrument):
+    '''
+    An implementaion of Instrument for Modhis
+    '''
+
+    self.temperature = 243*u.K
+
+    #To be continued. 
+
