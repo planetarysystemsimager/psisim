@@ -378,6 +378,12 @@ class hispec(Instrument):
     def init(self):
         super(hispec,self).init()
 
+        try:
+            import speclite
+        except Exception as e:
+            print(e)
+            print("You need to install the speclite python package to use hispec, modhis and kpic simulators")
+        
         # The main instrument properties - static
         self.read_noise = 3 # * u.photon#e-/pix/fr
         self.dark_current = 0.02*u.photon/u.s #photon/
@@ -386,6 +392,7 @@ class hispec(Instrument):
         self.qe = 0.95
         self.temperature = 276*u.K
 
+        self.name = "Keck-HISPEC"
         #Acceptable filters
         self.filters = ['Y','J','H','K']
 
@@ -403,7 +410,48 @@ class hispec(Instrument):
         '''
         To be filled in
         '''
-    
+
+    def load_scale_aowfe(self, path,seeing,airmass,fac,site_median_seeing=0.6):
+        '''
+        A function that returns something
+
+        Args:
+        path     -  Path to an ao errorbudget file [str]
+        seeing   -  The current seeing conditions in arcseconds  [float]
+        airmass  -  The current airmass [float
+        '''
+        
+        #Read in the ao_wfe
+        ao_wfe=np.genfromtxt(path+'aowfe/hispec_modhis_ao_errorbudgetb.csv', delimiter=',',skip_header=1)
+        ao_rmag = ao_wfe[:,0]
+
+        if isinstance(self, hispec):
+            ao_wfe_ngs=ao_wfe[:,2] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
+            ao_wfe_lgs=ao_wfe[:,3] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
+        elif isinstance(self, modhis):
+            ao_wfe_ngs=ao_wfe[:,4] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
+            ao_wfe_lgs=ao_wfe[:,5] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
+        elif isinstance(self, kpic_phaseI):
+            ao_wfe_ngs=ao_wfe[:,1] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
+            ao_wfe_lgs=ao_wfe[:,3] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
+        elif isinstance(self, kpic_phaseII):
+            ao_wfe_ngs=ao_wfe[:,2] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
+            ao_wfe_lgs=ao_wfe[:,3] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
+
+        return ao_rmag,ao_wfe_ngs,ao_wfe_lgs
+
+    def compute_SR(ao_rmag, host_model_mag_wfs, ao_wfe_ngs, ao_wfe_lgs, wave):
+        '''
+        Computer the Strehl ratio given 
+        '''
+
+        #We take the minimum wavefront error between natural guide star and laser guide star errors
+        ao_wfe = np.min([np.interp(host_model_mag_wfs,ao_rmag, ao_wfe_ngs),np.interp(host_model_mag_wfs,ao_rmag, ao_wfe_lgs)]) * u.nm
+
+        #Compute the strehl ratio
+        SR = np.array(np.exp(-(2*np.pi*ao_wfe.to(u.micron)/wave)**2))
+        return SR
+
 
 class modhis(Instrument):
     '''

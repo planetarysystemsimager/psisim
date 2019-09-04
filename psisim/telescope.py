@@ -122,7 +122,7 @@ class Keck(Telescope):
         super(Keck, self).__init__(9.85*u.m,collecting_area=)
 
         self.temperature = 276 * u.K
-
+        self.median_seeing = 0.6 * u.arcsec
 
     def get_sky_background(self ,wvs):
         '''
