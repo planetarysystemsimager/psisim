@@ -12,6 +12,9 @@ import pysynphot as ps
 import scipy.interpolate as si
 import speclite.filters
 import copy
+from scipy.ndimage.interpolation import shift
+from scipy.ndimage import gaussian_filter
+from PyAstronomy import pyasl
 
 # try:
 #     bex_labels = ['Age', 'Mass', 'Radius', 'Luminosity', 'Teff', 'Logg', 'NACOJ', 'NACOH', 'NACOKs', 'NACOLp', 'NACOMp', 'CousinsR', 'CousinsI', 'WISE1', 'WISE2', 'WISE3', 'WISE4', 
@@ -261,13 +264,15 @@ def downsample_spectrum(spectrum,R_in, R_out):
     '''
     fwhm = R_in/R_out
     sigma = fwhm/(2*np.sqrt(2*np.log(2)))
-    # import pdb; pdb.set_trace()
-    new_spectrum = ndi.gaussian_filter(spectrum, sigma.value)
+    if isinstance(sigma,float):
+        new_spectrum = ndi.gaussian_filter(spectrum, sigma)
+    else:
+        new_spectrum = ndi.gaussian_filter(spectrum, sigma.value)
 
     return new_spectrum
 
 
-def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbose=False,user_params = None):
+def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbose=False,user_params = None,doppler_shift=False,broaden=False,delta_wv=None):
     ''' 
     A function that returns the stellar spectrum for a given spectral type
 
@@ -276,6 +281,9 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
     wvs - The wavelengths at which you want the spectrum. Can be an array [microns]
     R   - The spectral resolving power that you want [int or float]
     Model - The stellar spectrum moodels that you want. [string]
+    delta_wv - The spectral resolution of a single pixel. To be used for doppler shifting
+    doppler_shift - Boolean, to apply a doppler shift or not
+    broaden - boolean, to broaden the spectrum or not. 
 
     Outputs:
      spectrum - returns the stellar spectrum at the desired wavelengths 
@@ -361,184 +369,175 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
 
     elif model == 'Phoenix':
         
-        path,star_filter,star_mag = user_params
+        path,star_filter,star_mag,filters,instrument_filter = user_params
 
-        #Because this migrated from Dimitri's code we need to use the speclite package
-        try:
-            import speclite
-        except Exception as e:
-            print(e)
-            print("You need to install the speclite python package to use the phoenix models")
+        available_filters = filters.names
+        if star_filter not in available_filters:
+            raise ValueError("Your stellar filter of {} is not a valid option. Please choose one of: {}".format(star_filter,available_filters))
 
-        filters=load_filters(path)
-
-        #Read in your logG and make sure it's valid
-        available_logGs = [6.00,5.50,5.00,4.50,4.00,3.50,3.00,2.50,2.00,1.50,1.00,0.50]
-        star_logG = planet_table_entry['StarLogg']
-        if star_loG not in available_logGs:
-            raise ValueError("Your star has an invalid logG for Phoenix models")
-        
-        #Read in your t_Eff and make sure it's valid
-        available_teffs = np.hstack([np.arange(2300,7000,100),np.arange(7000,12200,200)])
-        star_Teff = int(planet_table_entry['StarTeff'])
-        if star_Teff not in available_teffs:
-            raise ValueError("Your star has an invalid T_eff for Phoenix models")
-        
-        #Read in your metalicity and make sure it's valid
-        available_Z = ['-4.0','-3.0','-2.0','-1.5','-1.0','-0.5','-0.0','+0.5','+1.0']
         try: 
             star_z = planet_table_entry['StarZ']
         except Exception as e: 
             print(e)
             print("Some error in reading your star Z value, setting Z to zero")
             star_z = '-0.0'
-        if star_z not in available_Z:
-            raise ValueError("Your star has an invalid Z for Phoenix models")
-
-
-        #Read in your alpha value and make sure it's valid
-        available_alpha = ['-0.20','0.0','+0.20','+0.40','+0.60','+0.80','+1.00','+1.20']
+        
         try: 
             star_alpha = planet_table_entry['StarAlpha']
         except Exception as e:
             print(e)
             print("Some error in reading your star alpha value, setting alpha to zero")
             star_alpha ='0.0'
-        if star_alpha not in available_alpha:
-            raise ValueError("Your star has an invalid alpha for Phoenix models")
 
-        #Get the right directory and file path
-        if star_alpha =='0.0':
-            dir_host_model = "Z"+str(host_z)
-            host_filename = 'lte'+str(host_temp)+'-'+str(host_logg)+str(host_z)+'.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'
-        else: 
-            dir_host_model='Z'+str(host_z)+'.Alpha='+str(host_alpha)
-            host_filename = 'lte'+str(host_temp)+'-'+str(host_logg)+str(host_z)+'.Alpha='+str(host_alpha)+'.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'
-        path_to_file_host = path+'HIResFITS_lib/phoenix.astro.physik.uni-goettingen.de/HiResFITS/PHOENIX-ACES-AGSS-COND-2011/'+dir_host_model+'/'+host_filename
+        #Read in the model spectrum        
+        wave_u,spec_u = get_phoenix_spectrum(planet_table_entry['StarLogg'],planet_table_entry['StarTeff'],star_z,star_alpha,path=path)
 
-        starJmag = planet_table_entry['StarJmag']
+        spec_u = scale_spectrum_to_vegamag(wave_u,spec_u,star_mag,star_filter,filters)
+        new_ABmag = get_obj_ABmag(wave_u,spec_u,instrument_filter,filters)
 
-        #Now read in the spectrum and put it in the right file
-        wave_data = fits.open(path+'HIResFITS_lib/phoenix.astro.physik.uni-goettingen.de/HiResFITS/WAVE_PHOENIX-ACES-AGSS-COND-2011.fits')[0].data
-        wave_u = wave_data * u.AA
-        wave_u = wave_u.to(u.micron)
-        hdulist = fits.open(path_to_file_host, ignore_missing_end=True)
-        spec_data = hdulist[0].data
-        spec_u = spec_data * u.erg/u.s/u.cm**2/u.cm
-        #The original code outputs as above, but really we want it in photons/s/cm^2/A
-        spec_u = spec_u.to(u.ph/u.s/u.cm**2/u.AA)
+        #This loop may be very slow for a hi-res spectrum....
+        stellar_spectrum = np.zeros(np.shape(wvs))
+        
+        #Get the wavelength sampling of the stellar spectrum
+        dwvs = wave_u - np.roll(wave_u, 1)
+        dwvs[0] = dwvs[1]
+
+        mean_R_in = np.mean(wave_u/dwvs)
+
+        if R < mean_R_in:
+            ds = downsample_spectrum(spec_u,mean_R_in,R)
+        else:
+            if verbose:
+                print("Your requested Resolving power is greater than or equal to the native model. We're not upsampling here, but we should.")
+            ds = spec_u
+        # ds = spec_u
+        stellar_spectrum = np.interp(wvs,wave_u,ds)
+
+        #Now get the spectrum at the wavelengths that we want
+        # stellar_spectrum = []
+        #If wvs is a float then make it a list for the for loop
+        # if isinstance(wvs,float):
+            # wvs = [wvs]
+        # for i,wv in enumerate(wvs):       
+        #     #Get the wavelength sampling of the pysynphot sectrum
+        #     dwvs = wave_u - np.roll(wave_u, 1)
+        #     dwvs[0] = dwvs[1]
+        #     #Pick the index closest to our wavelength. 
+        #     ind = np.argsort(np.abs((wave_u-wv)))[0]
+        #     dwv = dwvs[ind]
+
+        #     R_in = wv/dwv
+        #     #Down-sample the spectrum to the desired wavelength
+        #     # import pdb; pdb.set_trace()
+        #     if R < R_in:
+        #         ds = downsample_spectrum(spec_u, R_in, R)
+        #     else: 
+        #         if verbose:
+        #             print("Your requested Resolving power is higher than the native model, only interpolating between points here.")
+        #         ds = spec_u
+
+        #     #Interpolate the spectrum to the wavelength we want
+        #     stellar_spectrum[i] = np.interp(wv,wave_u,ds)
+        #     # stellar_spectrum.append(si.interp1d(wave_u,ds)(wv))
+
+        stellar_spectrum *= spec_u.unit
 
         #Now scasle the spectrum so that it has the appropriate vegamagnitude
         #(with an internal AB mag)
-        spec_u = scale_obj_to_vegamag(wvs,spec_u,star_mag,star_filter,filters)
-
-        #Now get the spectrum at the wavelengths that we want
-
-        stellar_spectrum = []
-        #If wvs is a float then make it a list for the for loop
-        if isinstance(wvs,float):
-            wvs = [wvs]
-
-        #This loop may be very slow for a hi-res spectrum....
-        for wv in wvs:       
-            #Get the wavelength sampling of the pysynphot sectrum
-            dwvs = wave_u - np.roll(wave_u, 1)
-            dwvs[0] = dwvs[1]
-            #Pick the index closest to our wavelength. 
-            ind = np.argsort(np.abs((wave_u-wv)))[0]
-            dwv = dwvs[ind]
-
-            R_in = wv/dwv
-            #Down-sample the spectrum to the desired wavelength
-            if R < R_in:
-                ds = downsample_spectrum(spec_u, R_in, R)
-            else: 
-                print("Your requested Resolving power is higher than the native model, only interpolating between points here.")
-                ds = spec_u
-
-            #Interpolate the spectrum to the wavelength we want
-            stellar_spectrum.append(si.interp1d(wave_u,ds)(wv))
         
-        stellar_spectrum = np.array(stellar_spectrum)
+        stellar_spectrum = scale_spectrum_to_ABmag(wvs,stellar_spectrum,new_ABmag,instrument_filter,filters)
 
     elif model == 'Sonora':
-        path,star_filter,star_mag = user_params
         
-        filters = load_filters(path)
-        #Read in your logG and make sure it's valid
-        logG_dict = {'3.00':10,'3.25':17,'3.50':31,'3.75':56,'4.00':100,'4.25':178,'4.75':562,'5.00':1000,'5.25':1780,'5.50':3160}
-        available_logGs = np.array(list(logG_dict.keys()),dtype=np.float64)
+        path,star_filter,star_mag,filters,instrument_filter = user_params
+        
+        available_filters = filters.names
+        if star_filter not in available_filters:
+            raise ValueError("Your stellar filter of {} is not a valid option. Please choose one of: {}".format(star_filter,available_filters))
+
+        #Read in the sonora spectrum
         star_logG = planet_table_entry['StarLogg']
-        # import pdb; pdb.set_trace()
-        if star_logG not in available_logGs:
-            raise ValueError("Your star has an invalid logG of {} for Sonora models, please choose from: {}".format(star_logG,available_logGs))
-            
-        logG_key = logG_dict["{:.2f}".format(star_logG)]
-        
-        #Read in your t_Eff and make sure it's valid
-        available_teffs = ['200','225','250','275','300','325','350','375','400','425','450','475','500','525','550','575','600','650','700','750','800','850','900','950','1000','1100','1200','1300','1400','1500','1600','1700','1800','1900','2000','2100','2200','2300','2400']
         star_Teff = str(int(planet_table_entry['StarTeff']))
-        if star_Teff not in available_teffs:
-            raise ValueError("Your star has an invalid T_eff for the Sonora models")
+        wave_u,spec_u = get_sonora_spectrum(star_logG,star_Teff,path=path)
+        
+        spec_u = scale_spectrum_to_vegamag(wave_u,spec_u,star_mag,star_filter,filters)
+        new_ABmag = get_obj_ABmag(wave_u,spec_u,instrument_filter,filters)
 
-        host_filename = 'sp_t'+str(star_Teff)+'g'+str(logG_key)+'nc_m0.0'
-        path_to_file = path+'sonora/'+ host_filename
+        #Get the wavelength sampling of the stellar spectrum
+        dwvs = wave_u - np.roll(wave_u, 1)
+        dwvs[0] = dwvs[1]
 
-        obj_data = np.genfromtxt(path_to_file,skip_header=2)
-        wave_u = obj_data[::-1,0] * u.micron
-        spec_u = obj_data[::-1,1] * u.erg / u.cm**2 / u.s / u.Hz
-        spec_u = spec_u.to(u.erg/u.s/u.cm**2/u.cm,equivalencies=u.spectral_density(wave_u))
-        #Convert to our preferred units of photons/s/cm^2/A
-        spec_u = spec_u.to(u.ph/u.s/u.cm**2/u.AA,equivalencies=u.spectral_density(wave_u))
+        mean_R_in = np.mean(wave_u/dwvs)
 
+        if R < mean_R_in:
+            ds = downsample_spectrum(spec_u,mean_R_in,R)
+        else:
+            if verbose:
+                print("Your requested Resolving power is greater than or equal to the native model. We're not upsampling here, but we should.")
+            ds = spec_u
+        # ds = spec_u
+        stellar_spectrum = np.interp(wvs,wave_u,ds)
+        
+        #Now get the spectrum at the wavelengths that we want
+        # stellar_spectrum = np.zeros(np.shape(wvs))
+        #If wvs is a float then make it a list for the for loop
+        # if isinstance(wvs,float):
+            # wvs = [wvs]
+
+        # #This loop may be very slow for a hi-res spectrum....
+        # for i,wv in enumerate(wvs):       
+        #     #Get the wavelength sampling of the pysynphot sectrum
+        #     dwvs = wave_u - np.roll(wave_u, 1)
+        #     dwvs[0] = dwvs[1]
+        #     #Pick the index closest to our wavelength. 
+        #     ind = np.argsort(np.abs((wave_u-wv)))[0]
+        #     dwv = dwvs[ind]
+
+        #     R_in = wv/dwv
+        #     #Down-sample the spectrum to the desired wavelength
+        #     # import pdb; pdb.set_trace()
+        #     if R < R_in:
+        #         ds = downsample_spectrum(spec_u, R_in, R)
+        #     else: 
+        #         if verbose:
+        #             print("Your requested Resolving power is higher than the native model, only interpolating between points here.")
+        #         ds = spec_u
+
+        #     #Interpolate the spectrum to the wavelength we want
+        #     stellar_spectrum[i] = np.interp(wv,wave_u,ds)
+        #     # stellar_spectrum.append(si.interp1d(wave_u,ds)(wv))
+
+        stellar_spectrum *= spec_u.unit
         #Now scasle the spectrum so that it has the appropriate vegamagnitude
         #(with an internal AB mag)
-        spec_u = scale_obj_to_vegamag(wave_u,spec_u,star_mag,star_filter,filters)
-
-        #Now get the spectrum at the wavelengths that we want
-        stellar_spectrum = []
-        #If wvs is a float then make it a list for the for loop
-        if isinstance(wvs,float):
-            wvs = [wvs]
-
-        stellar_spectrum = np.zeros(np.shape(wvs))
-        #This loop may be very slow for a hi-res spectrum....
-        for i,wv in enumerate(wvs):       
-            #Get the wavelength sampling of the pysynphot sectrum
-            dwvs = wave_u - np.roll(wave_u, 1)
-            dwvs[0] = dwvs[1]
-            #Pick the index closest to our wavelength. 
-            ind = np.argsort(np.abs((wave_u-wv)))[0]
-            dwv = dwvs[ind]
-
-            R_in = wv/dwv
-            #Down-sample the spectrum to the desired wavelength
-            # import pdb; pdb.set_trace()
-            if R < R_in:
-                ds = downsample_spectrum(spec_u, R_in, R)
-            else: 
-                if verbose:
-                    print("Your requested Resolving power is higher than the native model, only interpolating between points here.")
-                ds = spec_u
-
-            #Interpolate the spectrum to the wavelength we want
-            print(i)
-            stellar_spectrum[i] = np.interp(wv,wave_u,ds)
-            # stellar_spectrum.append(si.interp1d(wave_u,ds)(wv))
-
-        import pdb; pdb.set_trace()        
-        stellar_spectrum *= spec_u.unit
-        # stellar_spectrum = np.array(stellar_spectrum)
-
-        return stellar_spectrum
+        stellar_spectrum = scale_spectrum_to_ABmag(wvs,stellar_spectrum,new_ABmag,instrument_filter,filters)
 
     else:
         if verbose:
-            print("We only support 'pickles' and 'Castelli-Kurucz' models for now")
+            print("We only support 'pickles', 'Castelli-Kurucz', 'Phoenix' and 'Sonora' models for now")
         return -1
 
-    return stellar_spectrum
+    ## Apply a doppler shift if you'd like.
+    if doppler_shift:
+        if delta_wv is not None:
+            if "StarRadialVelocity" in planet_table_entry.keys():
+                
+                stellar_spectrum = apply_doppler_shift(wvs,stellar_spectrum,delta_wv,planet_table_entry['StarRadialVelocity'])
 
+            else:
+                raise KeyError("The StarRadialVelocity key is missing from your target table. It is needed for a doppler shift. ")
+        else: 
+            print("You need to pass a delta_wv keyword to get_stellar_spectrum to apply a doppler shift")
+    
+    # import pdb;pdb.set_trace()
+    ## Rotationally broaden if you'd like
+    if broaden:
+        if ("StarVsini" in planet_table_entry.keys()) and ("StarLimbDarkening" in planet_table_entry.keys()):
+            stellar_spectrum = rotationally_broaden(wvs,stellar_spectrum,planet_table_entry['StarLimbDarkening'],planet_table_entry['StarVsini'])
+        else:
+            raise KeyError("The StarVsini key is missing from your target table. It is needed for a doppler shift. ")
+
+    return stellar_spectrum
 
 def get_pickles_spectrum(spt,verbose=False):
     '''
@@ -575,7 +574,6 @@ def get_pickles_spectrum(spt,verbose=False):
     
     return sp
 
-
 def get_castelli_kurucz_spectrum(teff,metallicity,logg):
     '''
     A function that returns the pysynphot spectrum given the parameters
@@ -588,6 +586,85 @@ def get_castelli_kurucz_spectrum(teff,metallicity,logg):
 
     return sp
 
+def get_phoenix_spectrum(star_logG,star_Teff,star_z,star_alpha,path='/scr3/dmawet/ETC/'):
+    '''
+    Read in a pheonix spectrum
+    '''
+    #Read in your logG and make sure it's valid
+    available_logGs = [6.00,5.50,5.00,4.50,4.00,3.50,3.00,2.50,2.00,1.50,1.00,0.50]
+    if star_logG not in available_logGs:
+        raise ValueError("Your star has an invalid logG for Phoenix models. Please pick from {}".format(available_logGs))
+    
+    #Read in your t_Eff and make sure it's valid
+    available_teffs = np.hstack([np.arange(2300,7000,100),np.arange(7000,12200,200)])
+    star_Teff = int(star_Teff)
+    if star_Teff not in available_teffs:
+        raise ValueError("Your star has an invalid T_eff for Phoenix models. Please pick from {}".format(available_teffs))
+    
+    #Read in your metalicity and make sure it's valid
+    available_Z = ['-4.0','-3.0','-2.0','-1.5','-1.0','-0.5','-0.0','+0.5','+1.0']
+    if star_z not in available_Z:
+        raise ValueError("Your star has an invalid Z for Phoenix models")
+
+    #Read in your alpha value and make sure it's valid
+    available_alpha = ['-0.20','0.0','+0.20','+0.40','+0.60','+0.80','+1.00','+1.20']
+    if star_alpha not in available_alpha:
+        raise ValueError("Your star has an invalid alpha for Phoenix models")
+
+    #Get the right directory and file path
+    if star_alpha =='0.0':
+        dir_host_model = "Z"+str(star_z)
+        # host_filename = 'lte'+str(star_Teff).zfill(5)+'-'+str(star_logG)+str(star_z)+'.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'
+        host_filename = 'lte{}-{:.2f}{}.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'.format(str(star_Teff).zfill(5),star_logG,star_z)
+    else: 
+        dir_host_model='Z'+str(star_z)+'.Alpha='+str(host_alpha)
+        # host_filename = 'lte'+str(star_Teff).zfill(5)+'-'+str(star_logG)+str(star_z)+'.Alpha='+str(star_alpha)+'.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'
+        host_filename = 'lte{}-{:.2f}{}.Alpha={}.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'.format(str(star_Teff).zfill(5),star_logG,star_z,star_alpha)
+
+    path_to_file_host = path+'HIResFITS_lib/phoenix.astro.physik.uni-goettingen.de/HiResFITS/PHOENIX-ACES-AGSS-COND-2011/'+dir_host_model+'/'+host_filename
+        
+
+    #Now read in the spectrum and put it in the right file
+    wave_data = fits.open(path+'HIResFITS_lib/phoenix.astro.physik.uni-goettingen.de/HiResFITS/WAVE_PHOENIX-ACES-AGSS-COND-2011.fits')[0].data
+    wave_u = wave_data * u.AA
+    wave_u = wave_u.to(u.micron)
+    hdulist = fits.open(path_to_file_host, ignore_missing_end=True)
+    spec_data = hdulist[0].data
+    spec_u = spec_data * u.erg/u.s/u.cm**2/u.cm
+    #The original code outputs as above, but really we want it in photons/s/cm^2/A
+    spec_u = spec_u.to(u.ph/u.s/u.cm**2/u.AA,equivalencies=u.spectral_density(wave_u))
+
+    return wave_u,spec_u
+
+def get_sonora_spectrum(star_logG,star_Teff,path='/src3/dmawet/ETC/'):
+    '''
+    A function that returns a sonora spectrum
+    '''
+    #Read in your logG and make sure it's valid
+    logG_dict = {'3.00':10,'3.25':17,'3.50':31,'3.75':56,'4.00':100,'4.25':178,'4.75':562,'5.00':1000,'5.25':1780,'5.50':3160}
+    available_logGs = np.array(list(logG_dict.keys()),dtype=np.float64)
+    # import pdb; pdb.set_trace()
+    if star_logG not in available_logGs:
+        raise ValueError("Your star has an invalid logG of {} for Sonora models, please choose from: {}".format(star_logG,available_logGs))
+        
+    logG_key = logG_dict["{:.2f}".format(star_logG)]
+    
+    #Read in your t_Eff and make sure it's valid
+    available_teffs = ['200','225','250','275','300','325','350','375','400','425','450','475','500','525','550','575','600','650','700','750','800','850','900','950','1000','1100','1200','1300','1400','1500','1600','1700','1800','1900','2000','2100','2200','2300','2400']
+    if star_Teff not in available_teffs:
+        raise ValueError("Your star has an invalid T_eff for the Sonora models")
+
+    host_filename = 'sp_t'+str(star_Teff)+'g'+str(logG_key)+'nc_m0.0'
+    path_to_file = path+'sonora/'+ host_filename
+
+    obj_data = np.genfromtxt(path_to_file,skip_header=2)
+    wave_u = obj_data[::-1,0] * u.micron
+    spec_u = obj_data[::-1,1] * u.erg / u.cm**2 / u.s / u.Hz
+    spec_u = spec_u.to(u.erg/u.s/u.cm**2/u.cm,equivalencies=u.spectral_density(wave_u))
+    #Convert to our preferred units of photons/s/cm^2/A
+    spec_u = spec_u.to(u.ph/u.s/u.cm**2/u.AA,equivalencies=u.spectral_density(wave_u))
+
+    return wave_u,spec_u
 
 def load_bex_models():
     """
@@ -612,8 +689,7 @@ def load_bex_models():
             dat = ascii.read(filename, names=bex_labels)
             bex_dict[mass] = dat
 
-
-def scale_obj_to_vegamag(wave_u,obj_spec_interp_u,obj_mag,obj_filt,filters):
+def scale_spectrum_to_vegamag(wave_u,obj_spec_interp_u,obj_mag,obj_filt,filters):
 
     '''
     Based on etc.scale_host_to_ABmag
@@ -627,29 +703,74 @@ def scale_obj_to_vegamag(wave_u,obj_spec_interp_u,obj_mag,obj_filt,filters):
     '''
     
     #conversion from Vega mag input to AB mag
-    if obj_filt == 'bessell-V':
-        obj_mag = obj_mag + 0.02
-    if obj_filt == 'bessell-R':
-        obj_mag = obj_mag + 0.21
-    if obj_filt == 'bessell-I':
-        obj_mag = obj_mag + 0.45
-    if obj_filt == 'TwoMASS-J':
-        obj_mag = obj_mag + 0.91
-    if obj_filt == 'TwoMASS-H':
-        obj_mag = obj_mag + 1.39
-    if obj_filt == 'TwoMASS-K':
-        obj_mag = obj_mag + 1.85
+    obj_mag = convert_vegamag_to_ABmag(obj_filt,obj_mag)
 
+    obj_spec = scale_spectrum_to_ABmag(wave_u,obj_spec_interp_u,obj_mag,obj_filt,filters)
+    
+    return obj_spec
+
+def scale_spectrum_to_ABmag(wave_u,obj_spec_interp_u,obj_mag,obj_filt,filters):
+
+    '''
+    Based on etc.scale_host_to_ABmag
+
+    Scale a spectrum to have a given stellar J-magnitude
+
+    Args: 
+    wvs     -   An array of wavelenghts, corresponding to the spectrum. [float array]
+    spectrum -  An array of spectrum, in units photons/s/cm^2/A, assumed to have a magnitude of ___ 
+    obj_mag   - The magnitude that we're scaling to in AB mag
+    '''
+    
+    this_filter = speclite.filters.load_filters(obj_filt)
     # import pdb; pdb.set_trace()
-    obj_model_mag = filters.get_ab_magnitudes(obj_spec_interp_u.to(u.erg/u.m**2/u.s/u.Angstrom,equivalencies=u.spectral_density(wave_u)), wave_u.to(u.Angstrom))
-    obj_model_mag = obj_model_mag[obj_filt]
+    obj_model_mag = this_filter.get_ab_magnitudes(obj_spec_interp_u.to(u.erg/u.m**2/u.s/u.Angstrom,equivalencies=u.spectral_density(wave_u)), wave_u.to(u.Angstrom))[obj_filt]
+    # obj_model_mag = obj_model_mag
     # print obj_model_mag
     # print 10**(-0.4*(obj_mag-obj_model_mag))
     obj_spec_interp_u = obj_spec_interp_u * 10**(-0.4*(obj_mag-obj_model_mag))
 
     return obj_spec_interp_u
 
-def load_filters(path):
+def convert_vegamag_to_ABmag(filter_name,vega_mag):
+    '''
+    A simple conversion function to convert from vega magnitudes to AB magnitudes
+
+    Inputs:
+    filter_name -   A string that holds the filter name. Must be supported. 
+    vega_mag    -   The vega magnitude in the given filter. 
+    path        -   The path to filter definition files. 
+    '''
+
+    ab_offset_dictionary = {'bessell-V':0.02, 'bessell-R':0.21, 'bessell-I':0.45, 'TwoMASS-J':0.91,'TwoMASS-H':1.39,'TwoMASS-K':1.85}
+
+    if filter_name not in ab_offset_dictionary.keys():
+        raise ValueError("I am not able to convert your object magnitude from vegamag to ABmag because your filter choice is not in my conversion library. \n Please choose one of the following {}".format(ab_offset_dictionary.keys()))
+    
+    return vega_mag+ab_offset_dictionary[filter_name]
+
+def get_obj_ABmag(wavelengths,spec,filter_name,filters):
+    '''
+    A tool to get an objects magnitude in a given filter.
+    Assumes you have a calibrated spectrum in appropriate astropy units
+    Returns ABmag
+
+    Inputs: 
+    wavelengths -  A vector containing the spectrum of your source [astropy quantity]
+    spec    -   The spectrum of your source [astropy quantitiy]
+    obj_mag - The object magniude in vega mags in the "obj_filter" filter 
+    obj_filter - The filter that the magnitude is given in
+    '''
+
+    if filter_name not in filters.names:
+        raise ValueError("Your requested filter of {} is not in our filter list: {}".format(filter_name,filters.names))
+    
+    this_filter = speclite.filters.load_filters(filter_name)
+    new_mag = this_filter.get_ab_magnitudes(spec.to(u.erg/u.m**2/u.s/u.Angstrom,equivalencies=u.spectral_density(wavelengths)), wavelengths.to(u.Angstrom))[filter_name]
+
+    return new_mag
+
+def load_filters(path="/scr3/dmawet/ETC/"):
     '''
     Load up some filter profiles and put them into speclite
     '''
@@ -667,4 +788,111 @@ def load_filters(path):
         response = K_2MASS_data[:,1], meta=dict(group_name='TwoMASS', band_name='K'))
     filters = speclite.filters.load_filters('bessell-V', 'bessell-R', 'bessell-I', 'TwoMASS-J','TwoMASS-H','TwoMASS-K')
     return filters
+
+def get_model_ABmags(planet_table_entry,filter_name_list, model='Phoenix',verbose=False,user_params = None):
+    '''
+    Get the AB color between two filters for a given stellar model
+    '''
+
+    #First read in the spectrum. This is somewhat redundant with get_stellar_spectrum function, 
+    #I've separated it out here though to keep things modularized...
+
+    filters = user_params[3]
+
+
+    for filter_name in filter_name_list:
+        if filter_name not in filters.names:
+            raise ValueError("Your filter, {}, is not in the acceptable filter list: {}".format(filter_name,filters.names))
+    
+    if model == 'Phoenix':
+        
+        path,star_filter,star_mag,filters,_ = user_params
+
+        available_filters = filters.names
+        if star_filter not in available_filters:
+            raise ValueError("Your stellar filter of {} is not a valid option. Please choose one of: {}".format(star_filter,available_filters))
+
+        try: 
+            star_z = planet_table_entry['StarZ']
+        except Exception as e: 
+            print(e)
+            print("Some error in reading your star Z value, setting Z to zero")
+            star_z = '-0.0'
+        
+
+        try: 
+            star_alpha = planet_table_entry['StarAlpha']
+        except Exception as e:
+            print(e)
+            print("Some error in reading your star alpha value, setting alpha to zero")
+            star_alpha ='0.0'
+
+        #Read in the model spectrum        
+        wave_u,spec_u = get_phoenix_spectrum(planet_table_entry['StarLogg'],planet_table_entry['StarTeff'],star_z,star_alpha,path=path)
+        
+        #Now scasle the spectrum so that it has the appropriate vegamagnitude
+        #(with an internal AB mag)
+        stellar_spectrum = scale_spectrum_to_vegamag(wave_u,spec_u,star_mag,star_filter,filters)
+
+    elif model == 'Sonora':
+        
+        path,star_filter,star_mag,filters,_ = user_params
+        
+        available_filters = filters.names
+        if star_filter not in available_filters:
+            raise ValueError("Your stellar filter of {} is not a valid option. Please choose one of: {}".format(star_filter,available_filters))
+
+        #Read in the sonora spectrum
+        star_logG = planet_table_entry['StarLogg']
+        star_Teff = str(int(planet_table_entry['StarTeff']))
+        wave_u,spec_u = get_sonora_spectrum(star_logG,star_Teff,path=path)
+
+        #Now scasle the spectrum so that it has the appropriate vegamagnitude
+        #(with an internal AB mag)
+        stellar_spectrum = scale_spectrum_to_vegamag(wave_u,spec_u,star_mag,star_filter,filters)
+
+
+    mags = filters.get_ab_magnitudes(stellar_spectrum.to(u.erg/u.m**2/u.s/u.Angstrom,equivalencies=u.spectral_density(wave_u)),wave_u.to(u.Angstrom))
+
+    mag_list = []
+    for filter_name in filter_name_list:
+        mag_list.append(mags[filter_name])
+
+    return mag_list
+
+def apply_doppler_shift(wavelengths,spec,delta_wv,rv_shift):
+    '''
+    A function to apply a doppler shift to a given spectrum
+
+    Inputs: 
+    wavelength  - A wavelength array or float, should have astropy units
+    spec        - the spectrum. Assumed usnigs of photons/s/cm^2/A
+    delta_wv    - the spectral resolution of a pixel
+    rv_shift the rv shift to apply
+    '''
+
+    #The average resolution of the spetrograph across the current band
+    # delta_lb = instrument.get_wavelength_range()[1]/instrument.current_R
+
+    #The resolution in velocity space
+    dvelocity = delta_wv*consts.c/wavelengths
+
+    #The radial velocity of the host in resolution elements. We'll shift the spectrum by the mean shift. 
+    rv_shift_resel = np.mean(rv_shift / dvelocity) * 1000*u.m/u.km
+
+    # import pdb; pdb.set_trace()
+    spec_shifted = shift(spec.value,rv_shift_resel.value)*spec.unit
+
+    return spec_shifted
+
+def rotationally_broaden(wavelengths,spec,ld,vsini):
+    '''
+    A function to rotationally broaden a spectrum
+    '''
+    # import pdb;pdb.set_trace()
+    spec_broadened = pyasl.fastRotBroad(wavelengths.to(u.AA).value,spec.value,ld,vsini.to(u.km/u.s).value)*spec.unit
+
+    return spec_broadened
+
+
 
