@@ -5,16 +5,13 @@ import numpy as np
 import scipy.ndimage as ndi
 import astropy.units as u
 import astropy.constants as consts
-import picaso
-from picaso import justdoit as jdi
 from astropy.io import fits, ascii
 import pysynphot as ps
 import scipy.interpolate as si
-import speclite.filters
 import copy
 from scipy.ndimage.interpolation import shift
 from scipy.ndimage import gaussian_filter
-from PyAstronomy import pyasl
+
 
 # try:
 #     bex_labels = ['Age', 'Mass', 'Radius', 'Luminosity', 'Teff', 'Logg', 'NACOJ', 'NACOH', 'NACOKs', 'NACOLp', 'NACOMp', 'CousinsR', 'CousinsI', 'WISE1', 'WISE2', 'WISE3', 'WISE4', 
@@ -45,6 +42,9 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True, planet_
     Outputs:
     params - picaso.justdoit.inputs class
     '''
+    import picaso
+    from picaso import justdoit as jdi
+
     global opacity
 
     if planet_type != "Jupiter" and verbose:
@@ -270,7 +270,6 @@ def downsample_spectrum(spectrum,R_in, R_out):
         new_spectrum = ndi.gaussian_filter(spectrum, sigma.value)
 
     return new_spectrum
-
 
 def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbose=False,user_params = None,doppler_shift=False,broaden=False,delta_wv=None):
     ''' 
@@ -721,7 +720,7 @@ def scale_spectrum_to_ABmag(wave_u,obj_spec_interp_u,obj_mag,obj_filt,filters):
     spectrum -  An array of spectrum, in units photons/s/cm^2/A, assumed to have a magnitude of ___ 
     obj_mag   - The magnitude that we're scaling to in AB mag
     '''
-    
+    import speclite.filters
     this_filter = speclite.filters.load_filters(obj_filt)
     # import pdb; pdb.set_trace()
     obj_model_mag = this_filter.get_ab_magnitudes(obj_spec_interp_u.to(u.erg/u.m**2/u.s/u.Angstrom,equivalencies=u.spectral_density(wave_u)), wave_u.to(u.Angstrom))[obj_filt]
@@ -761,7 +760,7 @@ def get_obj_ABmag(wavelengths,spec,filter_name,filters):
     obj_mag - The object magniude in vega mags in the "obj_filter" filter 
     obj_filter - The filter that the magnitude is given in
     '''
-
+    import speclite.filters
     if filter_name not in filters.names:
         raise ValueError("Your requested filter of {} is not in our filter list: {}".format(filter_name,filters.names))
     
@@ -774,6 +773,7 @@ def load_filters(path="/scr3/dmawet/ETC/"):
     '''
     Load up some filter profiles and put them into speclite
     '''
+    import speclite.filters
     J_2MASS_data = np.genfromtxt(path+'filters/2MASS_J.txt', skip_header=0)
     H_2MASS_data = np.genfromtxt(path+'filters/2MASS_H.txt', skip_header=0)
     K_2MASS_data = np.genfromtxt(path+'filters/2MASS_K.txt', skip_header=0)
@@ -889,6 +889,7 @@ def rotationally_broaden(wavelengths,spec,ld,vsini):
     '''
     A function to rotationally broaden a spectrum
     '''
+    from PyAstronomy import pyasl
     # import pdb;pdb.set_trace()
     spec_broadened = pyasl.fastRotBroad(wavelengths.to(u.AA).value,spec.value,ld,vsini.to(u.km/u.s).value)*spec.unit
 

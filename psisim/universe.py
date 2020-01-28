@@ -1,8 +1,7 @@
 import numpy as np
 import astropy.units as u
 import astropy.constants as constants
-from astropy.table import Table
-import EXOSIMS.MissionSim
+from astropy.table import QTable
 
 class Universe():
     '''
@@ -49,15 +48,17 @@ class ExoSims_Universe(Universe):
         A function that runs EXOSIMS and takes the output to populate the planets table
         '''
 
+        import EXOSIMS.MissionSim
+
         sim = EXOSIMS.MissionSim.MissionSim(self.filename, explainFiltering=True, fillPhotometry=True, nokoMap=True)
 
         flux_ratios = 10**(sim.SimulatedUniverse.dMag/-2.5)  # grab for now from EXOSIMS
-        angseps = sim.SimulatedUniverse.WA.value * 1000 # mas
-        projaus = sim.SimulatedUniverse.d.value # au
-        phase = np.arccos(sim.SimulatedUniverse.r[:,2]/sim.SimulatedUniverse.d) # planet phase  [0, pi]
-        smas = sim.SimulatedUniverse.a.value # au
+        angseps = sim.SimulatedUniverse.WA.value * 1000 *u.mas # mas
+        projaus = sim.SimulatedUniverse.d.value * u.AU # au
+        phase = np.arccos(sim.SimulatedUniverse.r[:,2]/sim.SimulatedUniverse.d) *u.rad# planet phase  [0, pi]
+        smas = sim.SimulatedUniverse.a.value*u.AU # au
         eccs = sim.SimulatedUniverse.e # eccentricity
-        incs = sim.SimulatedUniverse.I.value # degrees
+        incs = sim.SimulatedUniverse.I.value*u.deg # degrees
         masses = sim.SimulatedUniverse.Mp.value # earth masses
         radii = sim.SimulatedUniverse.Rp.value # earth radii
         grav = constants.G * (masses * u.earthMass)/(radii * u.earthRad)**2
@@ -99,7 +100,7 @@ class ExoSims_Universe(Universe):
         all_data = [star_names, ras, decs, distances, flux_ratios, angseps, projaus, phase, smas, eccs, incs, masses, radii, logg, spts, host_mass, host_teff, host_radii, host_logg, host_Bmags, host_Vmags, host_Rmags, host_Imags, host_Jmags, host_Hmags, host_Kmags]
         labels = ["StarName", "RA", "Dec", "Distance", "Flux Ratio", "AngSep", "ProjAU", "Phase", "SMA", "Ecc", "Inc", "PlanetMass", "PlanetRadius", "PlanetLogg", "StarSpT", "StarMass", "StarTeff", "StarRad", "StarLogg", "StarBMag", "StarVmag", "StarRmag", "StarImag", "StarJmag", "StarHmag", "StarKmag"]
 
-        planets_table = Table(all_data, names=labels)
+        planets_table = QTable(all_data, names=labels)
 
         self.planets = planets_table
         
