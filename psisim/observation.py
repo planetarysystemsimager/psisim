@@ -1,5 +1,3 @@
-
-import pysynphot as psyn
 from psisim import spectrum
 import numpy as np
 import scipy.interpolate as si

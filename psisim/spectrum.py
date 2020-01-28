@@ -6,7 +6,6 @@ import scipy.ndimage as ndi
 import astropy.units as u
 import astropy.constants as consts
 from astropy.io import fits, ascii
-import pysynphot as ps
 import scipy.interpolate as si
 import copy
 from scipy.ndimage.interpolation import shift
@@ -290,7 +289,7 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
     '''
 
     if model == 'pickles':
-
+        import pysynphot as ps
         #Get the pickles spectrum in units of photons/s/cm^2/angstrom. 
         #Wavelength units are microns
         sp = get_pickles_spectrum(planet_table_entry['StarSpT'],verbose=verbose)
@@ -318,6 +317,7 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         stellar_spectrum = np.array(stellar_spectrum)
     
     elif model == 'Castelli-Kurucz':
+        import pysynphot as ps
         # For now we're assuming a metallicity of 0, because exosims doesn't
         # provide anything different
 
