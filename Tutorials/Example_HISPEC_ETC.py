@@ -80,14 +80,14 @@ obj_spectrum = spectrum.get_stellar_spectrum(obj_properties,wavelengths,hispec.c
 doppler_shift=True,broaden=True,delta_wv=hispec.current_dwvs)
 print("Done generating the object spectrum")
 
+### You could save stuff, here's an example
+# tmp_host_fn = "/home/mblanchaer/hispec/host_spectrum.npy"
+# print("Saving host to {} with units {}".format(tmp_host_fn,host_spectrum.unit))
+# np.save(tmp_host_fn,host_spectrum.value)
 
-tmp_host_fn = "/home/mblanchaer/hispec/host_spectrum.npy"
-print("Saving host to {} with units {}".format(tmp_host_fn,host_spectrum.unit))
-np.save(tmp_host_fn,host_spectrum.value)
-
-tmp_object_fn = "/home/mblanchaer/hispec/object_spectrum.npy"
-print("Saving object to {} with units {}".format(tmp_object_fn,obj_spectrum.unit))
-np.save(tmp_object_fn,np.vstack([wavelengths.value,obj_spectrum.value]))
+# tmp_object_fn = "/home/mblanchaer/hispec/object_spectrum.npy"
+# print("Saving object to {} with units {}".format(tmp_object_fn,obj_spectrum.unit))
+# np.save(tmp_object_fn,np.vstack([wavelengths.value,obj_spectrum.value]))
 
 
 # fig = plt.figure(figsize=(30,10)) 
@@ -106,9 +106,10 @@ obj_spec,total_noise,stellar_spec,thermal_spectrum,noise_components = observatio
     inject_noise=False,verbose=True,post_processing_gain = 10,return_noise_components=True,stellar_spec=host_spectrum,
     apply_lsf=True,integrate_delta_wv=False)
 
-tmp_object_fn = "/home/mblanchaer/hispec/object_spectrum_final.npy"
-print("Saving object to {} with units {}".format(tmp_object_fn,obj_spec.unit))
-np.save(tmp_object_fn,np.vstack([wavelengths.value,obj_spec.value]))
+### More Saving examples
+# tmp_object_fn = "/home/mblanchaer/hispec/object_spectrum_final.npy"
+# print("Saving object to {} with units {}".format(tmp_object_fn,obj_spec.unit))
+# np.save(tmp_object_fn,np.vstack([wavelengths.value,obj_spec.value]))
 
 
 fig = plt.figure(figsize=(20,10))
