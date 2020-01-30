@@ -214,13 +214,14 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
             raise ValueError("Band needs to be 'R', 'I', 'J', 'H', 'K', 'L', 'M'. Got {0}.".format(band))
 
         logage = np.log10(age)
+    
+        # interpolate in age and wavelength space, but extrapolate as necessary
+        fp1 = si.interp1d(curve1['Age'], curve1[bexlabel], bounds_error=False, fill_value="extrapolate")(logage)
+        fp2 = si.interp1d(curve2['Age'], curve2[bexlabel], bounds_error=False, fill_value="extrapolate")(logage)
 
-        # linear interolation in log Age
-        fp1 = np.interp(logage, curve1['Age'], curve1[bexlabel]) # magnitude
-        fp2 = np.interp(logage, curve2['Age'], curve2[bexlabel]) # magnitude
+        # linear interpolate in log Mass, extrapoalte as necessary
+        fp = si.interp1d(np.log10([mass1, mass2]), [fp1, fp2], bounds_error=False, fill_value="extrapolate")(np.log10(planet_table_entry['PlanetMass'])) # magnitude
 
-        # linear interpolate in log Mass
-        fp = np.interp(np.log10(planet_table_entry['PlanetMass']), np.log10([mass1, mass2]), [fp1, fp2]) # magnitude
         # correct for distance
         fp = fp + 5 * np.log10(planet_table_entry['Distance']/10)
 
@@ -242,11 +243,10 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         bb_arg_pl = (consts.h * nu/(consts.k_B * pl_teff * u.cds.K)).decompose()
         bb_arg_star = (consts.h * nu/(consts.k_B * planet_table_entry['StarTeff'] * u.cds.K)).decompose()
         thermal_flux_ratio = ((planet_table_entry['PlanetRadius'] * u.earthRad)/(planet_table_entry['StarRad'] * u.solRad)).decompose()**2 * np.expm1(bb_arg_star)/np.expm1(bb_arg_pl)
-
+        
         phi = (np.sin(planet_table_entry['Phase']) + (np.pi - planet_table_entry['Phase'])*np.cos(planet_table_entry['Phase']))/np.pi
         reflected_flux_ratio = phi * a_v / 4 * (planet_table_entry['PlanetRadius'] * u.earthRad/(planet_table_entry['SMA'] * u.au)).decompose()**2
 
-        # print(pl_teff, phi, np.median(thermal_flux_ratio), np.median(reflected_flux_ratio))
         return thermal_flux_ratio + reflected_flux_ratio
 
 def downsample_spectrum(spectrum,R_in, R_out):
