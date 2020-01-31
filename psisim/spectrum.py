@@ -11,18 +11,29 @@ import copy
 from scipy.ndimage.interpolation import shift
 from scipy.ndimage import gaussian_filter
 
+try: 
+    import pysynphot as ps
+except ImportError:
+    pass
 
-# try:
-#     bex_labels = ['Age', 'Mass', 'Radius', 'Luminosity', 'Teff', 'Logg', 'NACOJ', 'NACOH', 'NACOKs', 'NACOLp', 'NACOMp', 'CousinsR', 'CousinsI', 'WISE1', 'WISE2', 'WISE3', 'WISE4', 
-#                 'F115W', 'F150W', 'F200W', 'F277W', 'F356W', 'F444W', 'F560W', 'F770W', 'F1000W', 'F1280W', 'F1500W', 'F1800W', 'F2100W', 'F2550W', 'VISIRB87', 'VISIRSiC', 
-#                 'SPHEREY', 'SPHEREJ', 'SPHEREH', 'SPHEREKs', 'SPHEREJ2', 'SPHEREJ3', 'SPHEREH2', 'SPHEREH3', 'SPHEREK1', 'SPHEREK2']
-#     # initalize on demand when needed
-#     bex_cloudy_mh0 = {}
-#     bex_clear_mh0 = {}
 
+bex_labels = ['Age', 'Mass', 'Radius', 'Luminosity', 'Teff', 'Logg', 'NACOJ', 'NACOH', 'NACOKs', 'NACOLp', 'NACOMp', 'CousinsR', 'CousinsI', 'WISE1', 'WISE2', 'WISE3', 'WISE4', 
+            'F115W', 'F150W', 'F200W', 'F277W', 'F356W', 'F444W', 'F560W', 'F770W', 'F1000W', 'F1280W', 'F1500W', 'F1800W', 'F2100W', 'F2550W', 'VISIRB87', 'VISIRSiC', 
+            'SPHEREY', 'SPHEREJ', 'SPHEREH', 'SPHEREKs', 'SPHEREJ2', 'SPHEREJ3', 'SPHEREH2', 'SPHEREH3', 'SPHEREK1', 'SPHEREK2']
+# initalize on demand when needed
+bex_cloudy_mh0 = {}
+bex_clear_mh0 = {}
+
+
+# try: 
+#     import picaso
+#     from picaso import justdoit as jdi
 #     opacity_folder = os.path.join(os.path.dirname(picaso.__file__), '..', 'reference', 'opacities')
 #     dbname = "opacity_LR.db"
 #     opacity = jdi.opannection(os.path.join(opacity_folder, dbname))
+# except ImportError:
+#     pass
+
 
 def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True, planet_mh=1, stellar_mh=0.0122, planet_teq=None, verbose=False):
     '''
@@ -41,8 +52,7 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True, planet_
     Outputs:
     params - picaso.justdoit.inputs class
     '''
-    import picaso
-    from picaso import justdoit as jdi
+    
 
     global opacity
 
@@ -237,15 +247,17 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
 
     elif package.lower() == "blackbody":
         a_v = atmospheric_parameters # just albedo
-        pl_teff = ((1 - a_v)/4  * (planet_table_entry['StarRad'] * u.solRad/(planet_table_entry['SMA'] * u.au)).decompose()**2 * planet_table_entry['StarTeff']**4)**(1./4)
+        pl_teff = ((1 - a_v)/4  * (planet_table_entry['StarRad'] * u.solRad/(planet_table_entry['SMA'])).decompose()**2 * planet_table_entry['StarTeff']**4)**(1./4)
 
-        nu = consts.c/(wvs * u.micron) # freq
+        nu = consts.c/(wvs) # freq
         bb_arg_pl = (consts.h * nu/(consts.k_B * pl_teff * u.cds.K)).decompose()
         bb_arg_star = (consts.h * nu/(consts.k_B * planet_table_entry['StarTeff'] * u.cds.K)).decompose()
+
         thermal_flux_ratio = ((planet_table_entry['PlanetRadius'] * u.earthRad)/(planet_table_entry['StarRad'] * u.solRad)).decompose()**2 * np.expm1(bb_arg_star)/np.expm1(bb_arg_pl)
         
-        phi = (np.sin(planet_table_entry['Phase']) + (np.pi - planet_table_entry['Phase'])*np.cos(planet_table_entry['Phase']))/np.pi
-        reflected_flux_ratio = phi * a_v / 4 * (planet_table_entry['PlanetRadius'] * u.earthRad/(planet_table_entry['SMA'] * u.au)).decompose()**2
+        #Lambertian? What is this equation - To verify later. 
+        phi = (np.sin(planet_table_entry['Phase']) + (np.pi - planet_table_entry['Phase'].to(u.rad).value)*np.cos(planet_table_entry['Phase']))/np.pi
+        reflected_flux_ratio = phi * a_v / 4 * (planet_table_entry['PlanetRadius'] * u.earthRad/(planet_table_entry['SMA'])).decompose()**2
 
         return thermal_flux_ratio + reflected_flux_ratio
 
@@ -289,7 +301,7 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
     '''
 
     if model == 'pickles':
-        import pysynphot as ps
+        # import pysynphot as ps
         #Get the pickles spectrum in units of photons/s/cm^2/angstrom. 
         #Wavelength units are microns
         sp = get_pickles_spectrum(planet_table_entry['StarSpT'],verbose=verbose)
@@ -317,7 +329,6 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         stellar_spectrum = np.array(stellar_spectrum)
     
     elif model == 'Castelli-Kurucz':
-        import pysynphot as ps
         # For now we're assuming a metallicity of 0, because exosims doesn't
         # provide anything different
 
@@ -355,7 +366,7 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
             dwvs = sp_norm.wave - np.roll(sp_norm.wave, 1)
             dwvs[0] = dwvs[1]
             #Pick the index closest to our wavelength. 
-            ind = np.argsort(np.abs((sp_norm.wave-wv)))[0]
+            ind = np.argsort(np.abs((sp_norm.wave*u.micron-wv)))[0]
             dwv = dwvs[ind]
 
             R_in = wv/dwv

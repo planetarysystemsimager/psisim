@@ -3,16 +3,21 @@ import numpy as np
 import matplotlib.pylab as plt
 import copy
 import time
+import astropy.units as u
+import os
+import psisim
+
+psisim_path = os.path.dirname(psisim.__file__)
 
 tmt = telescope.TMT()
 psi_red = instrument.PSI_Red()
-psi_red.set_observing_mode(3600,2,'M',10, np.linspace(4.2,4.8,3)) #3600s, 2 exposures,M-band, R of 10
+psi_red.set_observing_mode(3600,2,'M',10, np.linspace(4.2,4.8,3)*u.micron) #3600s, 2 exposures,M-band, R of 10
 
 ######################################
 ######## Generate the universe #######
 ######################################
 
-exosims_config_filename = "forBruceandDimitri_EXOCAT1.json" #Some filename here
+exosims_config_filename = psisim_path+"/../Tutorials/forBruceandDimitri_EXOCAT1.json" #Some filename here
 uni = universe.ExoSims_Universe(exosims_config_filename)
 uni.simulate_EXOSIMS_Universe()
 
@@ -20,10 +25,10 @@ uni.simulate_EXOSIMS_Universe()
 ######## Lots of setup #######
 ##############################
 
-min_iwa = np.min(psi_red.current_wvs)*1e-6/tmt.diameter*206265
+min_iwa = np.min(psi_red.current_wvs).to(u.m)/tmt.diameter*u.rad
 planet_table = uni.planets
 # planet_table = planet_table[np.where(planet_table['PlanetMass'] > 10)]
-planet_table = planet_table[planet_table['AngSep']/1000 > min_iwa]
+planet_table = planet_table[planet_table['AngSep'] > min_iwa.to(u.mas)]
 planet_table = planet_table[planet_table['Flux Ratio'] > 1e-10]
 
 n_planets = len(planet_table)
@@ -54,14 +59,15 @@ n_model_wv = int((model_wv_high-model_wv_low)/(dwv_c/2))*2
 #Generate the model wavelenths
 model_wvs = np.linspace(model_wv_low, model_wv_high, n_model_wv) #Choose some wavelengths
 
+#Let's assume we're doing the AO sensing in I-band: 
+planet_table['StarAOmag'] = planet_table['StarImag']
+
 #####################################
 ######## Generate the Spectra #######
 #####################################
 
-
 print("\n Starting to generate planet spectra")
 for planet in planet_table[rand_planets]:
-
     #INSERT PLANET SELECTION RULES HERE
 
     if planet['PlanetMass'] < 10:
@@ -88,7 +94,6 @@ for planet in planet_table[rand_planets]:
     	## Generate the spectrum from cooling models and downsample to intermediate resolution
         atmospheric_parameters = age, 'M', True
         planet_spectrum = spectrum.simulate_spectrum(planet, model_wvs, intermediate_R, atmospheric_parameters, package='bex-cooling')
-
 
         ## Generate the spectrum from a blackbody
         atmospheric_parameters = 0.5#The bond albedo

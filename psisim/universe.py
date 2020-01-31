@@ -55,7 +55,7 @@ class ExoSims_Universe(Universe):
         flux_ratios = 10**(sim.SimulatedUniverse.dMag/-2.5)  # grab for now from EXOSIMS
         angseps = sim.SimulatedUniverse.WA.value * 1000 *u.mas # mas
         projaus = sim.SimulatedUniverse.d.value * u.AU # au
-        phase = np.arccos(sim.SimulatedUniverse.r[:,2]/sim.SimulatedUniverse.d) *u.rad# planet phase  [0, pi]
+        phase = np.arccos(sim.SimulatedUniverse.r[:,2]/sim.SimulatedUniverse.d)# planet phase  [0, pi]
         smas = sim.SimulatedUniverse.a.value*u.AU # au
         eccs = sim.SimulatedUniverse.e # eccentricity
         incs = sim.SimulatedUniverse.I.value*u.deg # degrees

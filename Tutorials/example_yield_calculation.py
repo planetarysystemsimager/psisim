@@ -5,10 +5,11 @@ import matplotlib.pylab as plt
 import copy
 import time
 from astropy.io import fits
+import astropy.units as u
 
 tmt = telescope.TMT()
 psi_blue = instrument.PSI_Blue()
-psi_blue.set_observing_mode(3600,10,'z',50, np.linspace(0.60,0.85,40)) #60s, 40 exposures,z-band, R of 10
+psi_blue.set_observing_mode(3600,10,'z',50, np.linspace(0.60,0.85,40)*u.micron) #60s, 40 exposures,z-band, R of 10
 
 exosims_config_filename = "forBruceandDimitri_EXOCAT1.json" #Some filename here
 uni = universe.ExoSims_Universe(exosims_config_filename)
@@ -17,15 +18,15 @@ uni.simulate_EXOSIMS_Universe()
 planet_table = uni.planets
 full_planet_table = copy.deepcopy(uni.planets)
 #Down select the planets whose separations are less than lambda/D
-min_iwa = np.min(psi_blue.current_wvs)*1e-6/tmt.diameter*206265
-planet_table = planet_table[planet_table['AngSep']/1000 > min_iwa]
+min_iwa = np.min(psi_blue.current_wvs).to(u.m)/tmt.diameter*u.rad
+planet_table = planet_table[planet_table['AngSep']/1000 > min_iwa.to(u.mas)]
 planet_table = planet_table[planet_table['Flux Ratio'] > 1e-10]
 n_planets = len(planet_table)
 
 planet_types = []
 planet_spectra = []
 
-n_planets_now = 2000
+n_planets_now = 2
 #We'll pick random planets, since many systems are multi-planet systems and they show up 
 #sequentially in EXOSIMS
 rand_planets = np.random.randint(0, n_planets, n_planets_now)
@@ -75,10 +76,10 @@ def generate_spectrum(planet):
     return planet_type, planet_spectrum
 
 ### Non parallel Code 
-# for planet in planet_table[rand_planets]:
-#     planet_type, planet_spectrum = generate_spectrum(planet)
-#     planet_types.append(planet_type)
-#     planet_spectra.append(planet_spectrum)
+for planet in planet_table[rand_planets]:
+    planet_type, planet_spectrum = generate_spectrum(planet)
+    planet_types.append(planet_type)
+    planet_spectra.append(planet_spectrum)
 
 ### Parallel Code
 pool = mp.Pool(processes=2) # pick the number of processes you want to use

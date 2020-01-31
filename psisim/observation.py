@@ -50,10 +50,14 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     stellar_spectrum *= telescope.collecting_area.to(u.cm**2)
 
     #Multiply by atmospheric transmission
-    stellar_spectrum *= telescope.get_atmospheric_transmission(wvs)
+    stellar_spectrum *= telescope.get_atmospheric_transmission(wvs,R=instrument.current_R)
 
     #Multiply by telescope throughput
     stellar_spectrum *= telescope.get_telescope_throughput(wvs,instrument)
+
+
+    ## TODO: pass in the planet separation to get_inst_throughput
+    ## TODO: make a planet and star flag for get_inst_throughput (may depend on separation)
 
     #Multiply by instrument throughputs and quantum efficiency
     stellar_spectrum *= instrument.get_inst_throughput(wvs)
@@ -66,7 +70,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     scaled_spectrum = planet_spectrum*stellar_spectrum
 
     #Get Sky thermal background in photons/s/Angstrom
-    thermal_sky = telescope.get_sky_background(wvs) #Assumes diffraction limited PSF had to multiply by solid angle of PSF.
+    thermal_sky = telescope.get_sky_background(wvs,R=instrument.current_R) #Assumes diffraction limited PSF had to multiply by solid angle of PSF.
     thermal_sky *= telescope.collecting_area.to(u.cm**2) #Multiply by collecting area - units of photons/s/Angstom
     thermal_sky *= telescope.get_telescope_throughput(wvs,band=instrument.current_filter) #Multiply by telescope throughput
     thermal_sky *= instrument.get_inst_throughput(wvs) #Multiply by instrument throughput
@@ -160,6 +164,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
         # equal to the noise
         for i,noise in enumerate(total_noise):
             # import pdb; pdb.set_trace()
+            ## TODO: Make this poisson so that it's valid still in low photon count regime. 
             detector_spectrum[i] = np.random.normal(detector_spectrum[i],noise)
 
     #TODO: Currently everything is in e-. We likely want it in a different unit at the end. 
@@ -336,8 +341,6 @@ def get_noise_components(separation,star_aomag,instrument,wvs,star_spt,stellar_s
     Calculate all of the different noise contributions
     '''
 
-    #### TODO include photon noise from the speckles
-    
     # First is speckle noise.
     # Instrument.get_speckle_noise should return things in contrast units relative to the star
     speckle_noise = instrument.get_speckle_noise(separation,star_aomag,instrument.current_filter,wvs,star_spt,telescope)[0]
