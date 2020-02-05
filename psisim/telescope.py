@@ -239,7 +239,7 @@ class Keck(Telescope):
         #Return the function in units that we like. 
         return sky_background.to(u.ph/u.s/u.cm**2/u.AA,equivalencies=u.spectral_density(wvs))
 
-    def get_atmospheric_transmission(self,wave,path="/scr3/dmawet/ETC/"):
+    def get_atmospheric_transmission(self,wave,path="/scr3/dmawet/ETC/",R=1e5):
         '''
         A function that computes the sky and telescope throughput 
 
@@ -255,7 +255,11 @@ class Keck(Telescope):
         sky_trans_wave = sky_trans_tmp[:,0]*u.micron #* u.nm
 
         #Interpolate to the wavelengths that we want. 
-        sky_trans_interp = np.interp(wave,sky_trans_wave,sky_trans)
+        # sky_trans_interp = np.interp(wave,sky_trans_wave,sky_trans)
+        sky_trans_interp = si.interp1d(wave,sky_trans_wave,sky_trans,bounds_error=False,fill_value='extrapolate')
+
+        if R < 1e5:
+            sky_trans_interp = spectrum.downsample_spectrum(sky_trans_interp,1e5,R)
 
         return sky_trans_interp
 
