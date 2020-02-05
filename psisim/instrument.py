@@ -461,7 +461,7 @@ class hispec(Instrument):
         Return the cut on, center and cut off wavelengths in microns of the different science filters.
         '''
 
-        filter_options = {"Y":(0.960*u.micron,1.018*u.micron,1.070*u.micron),
+        filter_options = {"Y":(0.940*u.micron,1.018*u.micron,1.090*u.micron),
                           "TwoMASS-J":(1.1*u.micron,1.248*u.micron,1.360*u.micron),
                           "TwoMASS-H":(1.480*u.micron,1.633*u.micron,1.820*u.micron),
                           "TwoMASS-K":(1.950*u.micron,2.2*u.micron,2.350*u.micron)}
