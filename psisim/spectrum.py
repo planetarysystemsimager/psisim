@@ -16,6 +16,7 @@ try:
 except ImportError:
     pass
 
+psisim_path = os.path.dirname(psisim.__file__)
 
 bex_labels = ['Age', 'Mass', 'Radius', 'Luminosity', 'Teff', 'Logg', 'NACOJ', 'NACOH', 'NACOKs', 'NACOLp', 'NACOMp', 'CousinsR', 'CousinsI', 'WISE1', 'WISE2', 'WISE3', 'WISE4', 
             'F115W', 'F150W', 'F200W', 'F277W', 'F356W', 'F444W', 'F560W', 'F770W', 'F1000W', 'F1280W', 'F1500W', 'F1800W', 'F2100W', 'F2550W', 'VISIRB87', 'VISIRSiC', 
@@ -780,14 +781,18 @@ def get_obj_ABmag(wavelengths,spec,filter_name,filters):
 
     return new_mag
 
-def load_filters(path="/scr3/dmawet/ETC/"):
+def load_filters(path=psisim_path+"/data/filter_profiles/"):
     '''
     Load up some filter profiles and put them into speclite
     '''
     import speclite.filters
-    J_2MASS_data = np.genfromtxt(path+'filters/2MASS_J.txt', skip_header=0)
-    H_2MASS_data = np.genfromtxt(path+'filters/2MASS_H.txt', skip_header=0)
-    K_2MASS_data = np.genfromtxt(path+'filters/2MASS_K.txt', skip_header=0)
+    CFHT_Y_data = np.genfromtxt(path+'CFHT_y.txt', skip_header=0)
+    J_2MASS_data = np.genfromtxt(path+'2MASS_J.txt', skip_header=0)
+    H_2MASS_data = np.genfromtxt(path+'2MASS_H.txt', skip_header=0)
+    K_2MASS_data = np.genfromtxt(path+'2MASS_K.txt', skip_header=0)
+    CFHT_Y = speclite.filters.FilterResponse(
+        wavelength = CFHT_Y_data[:,0] * u.micron,
+        response = CFHT_Y_data[:,1], meta=dict(group_name='CFHT', band_name='Y'))
     TwoMASS_J = speclite.filters.FilterResponse(
         wavelength = J_2MASS_data[:,0] * u.micron,
         response = J_2MASS_data[:,1], meta=dict(group_name='TwoMASS', band_name='J'))
@@ -797,7 +802,7 @@ def load_filters(path="/scr3/dmawet/ETC/"):
     TwoMASS_K = speclite.filters.FilterResponse(
         wavelength = K_2MASS_data[:,0] * u.micron,
         response = K_2MASS_data[:,1], meta=dict(group_name='TwoMASS', band_name='K'))
-    filters = speclite.filters.load_filters('bessell-V', 'bessell-R', 'bessell-I', 'TwoMASS-J','TwoMASS-H','TwoMASS-K')
+    filters = speclite.filters.load_filters('bessell-V', 'bessell-R', 'bessell-I','CFHT-Y','TwoMASS-J','TwoMASS-H','TwoMASS-K')
     return filters
 
 def get_model_ABmags(planet_table_entry,filter_name_list, model='Phoenix',verbose=False,user_params = None):
