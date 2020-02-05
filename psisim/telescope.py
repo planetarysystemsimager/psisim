@@ -125,7 +125,7 @@ class TMT(Telescope):
 
         #Interpolate it to the wavelengths we care about
         # sky_background = np.interp(wvs,sky_background_MK_wave.to(u.micron),sky_background_MK)*u.photon/(u.s*u.arcsec**2*u.nm*u.m**2) 
-        sky_background = si.interp1d(wvs,sky_background_MK_wave.to(u.micron),sky_background_MK,bounds_error=False,fill_value='extrapolate')*u.photon/(u.s*u.arcsec**2*u.nm*u.m**2) 
+        sky_background = si.interp1d(sky_background_MK_wave.to(u.micron),sky_background_MK,bounds_error=False,fill_value='extrapolate')*u.photon/(u.s*u.arcsec**2*u.nm*u.m**2)(wvs)
 
         if R < 1e5:
             sky_background = spectrum.downsample_spectrum(sky_background,1e5,R)
@@ -153,7 +153,7 @@ class TMT(Telescope):
 
         #Interpolate to the wavelengths that we want. 
         # sky_trans_interp = np.interp(wave,sky_trans_wave,sky_trans)
-        sky_trans_interp = si.interp1d(wave,sky_trans_wave,sky_trans,bounds_error=False,fill_value='extrapolate')
+        sky_trans_interp = si.interp1d(sky_trans_wave,sky_trans,bounds_error=False,fill_value='extrapolate')(wave)
 
         if R < 1e5:
             sky_trans_interp = spectrum.downsample_spectrum(sky_trans_interp,1e5,R)
@@ -174,30 +174,6 @@ class TMT(Telescope):
         throughput = {'Y':0.88,"TwoMASS-J":0.88,"TwoMASS-H":0.88,"TwoMASS-K":0.88}.get(band,0.88)
         
         return throughput*np.ones(np.shape(wvs))
-
-    def get_atmospheric_transmission(self,wave,path="/scr3/dmawet/ETC/",R=1e5):
-        '''
-        A function that computes the sky and telescope throughput 
-
-        Arguments 
-        ----------
-        wave     - A single wavelength or array of wavelengths [microns]
-        path    - The path we we can find the transmission files
-        '''
-
-        #Read in the sky transmission for the current observing conditions
-        sky_trans_tmp = np.genfromtxt(path+'sky/mktrans_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'.dat', skip_header=0)
-        sky_trans = sky_trans_tmp[:,1]
-        sky_trans_wave = sky_trans_tmp[:,0]*u.micron #* u.nm
-
-        #Interpolate to the wavelengths that we want. 
-        # sky_trans_interp = np.interp(wave,sky_trans_wave,sky_trans)
-        sky_trans_interp = si.interp1d(wave,sky_trans_wave,sky_trans,bounds_error=False,fill_value='extrapolate')
-
-        if R < 1e5:
-            sky_trans_interp = spectrum.downsample_spectrum(sky_trans_interp,1e5,R)
-
-        return sky_trans_interp
         
 class Keck(Telescope):
     '''
@@ -256,7 +232,8 @@ class Keck(Telescope):
 
         #Interpolate to the wavelengths that we want. 
         # sky_trans_interp = np.interp(wave,sky_trans_wave,sky_trans)
-        sky_trans_interp = si.interp1d(wave,sky_trans_wave,sky_trans,bounds_error=False,fill_value='extrapolate')
+        import pdb; pdb.set_trace()
+        sky_trans_interp = si.interp1d(sky_trans_wave,sky_trans,bounds_error=False,fill_value='extrapolate')(wave)
 
         if R < 1e5:
             sky_trans_interp = spectrum.downsample_spectrum(sky_trans_interp,1e5,R)
