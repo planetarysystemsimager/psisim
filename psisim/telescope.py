@@ -232,7 +232,6 @@ class Keck(Telescope):
 
         #Interpolate to the wavelengths that we want. 
         # sky_trans_interp = np.interp(wave,sky_trans_wave,sky_trans)
-        import pdb; pdb.set_trace()
         sky_trans_interp = si.interp1d(sky_trans_wave,sky_trans,bounds_error=False,fill_value='extrapolate')(wave)
 
         if R < 1e5:
