@@ -791,8 +791,8 @@ def load_filters(path=psisim_path+"/data/filter_profiles/"):
     H_2MASS_data = np.genfromtxt(path+'2MASS_H.txt', skip_header=0)
     K_2MASS_data = np.genfromtxt(path+'2MASS_K.txt', skip_header=0)
     CFHT_Y = speclite.filters.FilterResponse(
-        wavelength = CFHT_Y_data[:,0] * u.micron,
-        response = CFHT_Y_data[:,1], meta=dict(group_name='CFHT', band_name='Y'))
+        wavelength = CFHT_Y_data[:,0]/1000 * u.micron,
+        response = CFHT_Y_data[:,1]/100, meta=dict(group_name='CFHT', band_name='Y'))
     TwoMASS_J = speclite.filters.FilterResponse(
         wavelength = J_2MASS_data[:,0] * u.micron,
         response = J_2MASS_data[:,1], meta=dict(group_name='TwoMASS', band_name='J'))
