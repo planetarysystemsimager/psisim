@@ -125,7 +125,7 @@ class TMT(Telescope):
 
         #Interpolate it to the wavelengths we care about
         # sky_background = np.interp(wvs,sky_background_MK_wave.to(u.micron),sky_background_MK)*u.photon/(u.s*u.arcsec**2*u.nm*u.m**2) 
-        sky_background = si.interp1d(sky_background_MK_wave.to(u.micron),sky_background_MK,bounds_error=False,fill_value='extrapolate')*u.photon/(u.s*u.arcsec**2*u.nm*u.m**2)(wvs)
+        sky_background = si.interp1d(sky_background_MK_wave.to(u.micron),sky_background_MK,bounds_error=False,fill_value='extrapolate')(wvs)*u.photon/(u.s*u.arcsec**2*u.nm*u.m**2)
 
         if R < 1e5:
             sky_background = spectrum.downsample_spectrum(sky_background,1e5,R)
@@ -187,9 +187,12 @@ class Keck(Telescope):
         self.airmass = airmass
         self.water_vapor = water_vapor
 
-    def get_sky_background(self, wvs, path="/scr3/dmawet/ETC/"):
+    def get_sky_background(self, wvs, path="/scr3/dmawet/ETC/",R=1e5):
         '''
         A function that returns the sky background for a given set of wavelengths. 
+
+        #Based on Keck sky backgrounds done by Dimitri - Currently super high resolution
+
         Inputs: 
         wvs     - A list of wavelengths assumed to be microns
 
@@ -207,7 +210,11 @@ class Keck(Telescope):
         sky_background_MK_wave = sky_background_tmp[:,0] * u.nm
 
         #Interpolate it to the wavelengths we care about
-        sky_background = np.interp(wvs,sky_background_MK_wave.to(u.micron),sky_background_MK)*u.photon/(u.s*u.arcsec**2*u.nm*u.m**2) 
+        # sky_background = np.interp(wvs,sky_background_MK_wave.to(u.micron),sky_background_MK)*u.photon/(u.s*u.arcsec**2*u.nm*u.m**2) 
+        sky_background = si.interp1d(sky_background_MK_wave.to(u.micron).value,sky_background_MK,bounds_error=False,fill_value='extrapolate')(wvs)*u.photon/(u.s*u.arcsec**2*u.nm*u.m**2)
+
+        if R < 1e5:
+            sky_background = spectrum.downsample_spectrum(sky_background,1e5,R)
 
         #Multiply by the solid angle
         sky_background *= solidangle
