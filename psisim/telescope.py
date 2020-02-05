@@ -70,7 +70,7 @@ class Telescope():
 
         return emissivity
     
-    def get_atmospheric_transmission(self,wvs):
+    def get_atmospheric_transmission(self,wvs,R=1e5):
         '''
         A function that returns the atmospheric transmission for a given set of wavelengths. 
 
@@ -78,6 +78,7 @@ class Telescope():
 
         Inputs: 
         wvs     - A list of wavelengths 
+        R       - Spectral resolving power. Doesn't do anything here. 
 
         Outputs: 
         transmissions - A list of atmospheric transmissions
@@ -174,24 +175,29 @@ class TMT(Telescope):
         
         return throughput*np.ones(np.shape(wvs))
 
-    def get_thermal_emission(self,wvs,band="TwoMass-J"):
+    def get_atmospheric_transmission(self,wave,path="/scr3/dmawet/ETC/",R=1e5):
         '''
-        The telescope emission as a function of wavelength
+        A function that computes the sky and telescope throughput 
 
-        Outputs:
-        thermal_emission - usnits of photons/s/cm**2/angstrom
+        Arguments 
+        ----------
+        wave     - A single wavelength or array of wavelengths [microns]
+        path    - The path we we can find the transmission files
         '''
 
-        diffraction_limit = (wvs/self.diameter.to(u.micron)*u.radian).to(u.arcsec)
-        solidangle = diffraction_limit**2 * 1.13
+        #Read in the sky transmission for the current observing conditions
+        sky_trans_tmp = np.genfromtxt(path+'sky/mktrans_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'.dat', skip_header=0)
+        sky_trans = sky_trans_tmp[:,1]
+        sky_trans_wave = sky_trans_tmp[:,0]*u.micron #* u.nm
 
-        thermal_emission = blackbody_lambda(wvs,self.temperature)
-        thermal_emission *= solidangle
-        thermal_emission = thermal_emission.to(u.ph/(u.s * u.cm**2 * u.AA),equivalencies=u.spectral_density(wvs))
+        #Interpolate to the wavelengths that we want. 
+        # sky_trans_interp = np.interp(wave,sky_trans_wave,sky_trans)
+        sky_trans_interp = si.interp1d(wave,sky_trans_wave,sky_trans,bounds_error=False,fill_value='extrapolate')
 
-        thermal_emission *= self.get_telescope_emissivity(wvs,band=band)
+        if R < 1e5:
+            sky_trans_interp = spectrum.downsample_spectrum(sky_trans_interp,1e5,R)
 
-        return thermal_emission
+        return sky_trans_interp
         
 class Keck(Telescope):
     '''
