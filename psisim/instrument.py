@@ -409,12 +409,12 @@ class hispec(Instrument):
         self.d_ao = 0.15 * u.m
         self.area_ao = np.pi*(self.d_ao/2)**2
 
-        
+
         
         self.name = "Keck-HISPEC"
         
         #Acceptable filters
-        self.filters = ['TwoMASS-J','TwoMASS-H','TwoMASS-K'] #Available observing filters
+        self.filters = ['CFHT-Y','TwoMASS-J','TwoMASS-H','TwoMASS-K'] #Available observing filters
 
         # self.lsf_width = 1.0/2.35 #The linespread function width in pixels (assuming Gaussian for now)
         
@@ -426,8 +426,9 @@ class hispec(Instrument):
         self.current_wvs = None
         self.current_dwvs = None
         self.ao_mag = None
+        self.mode = None
     
-    def set_observing_mode(self,exposure_time,n_exposures,sci_filter,wvs,dwvs=None):
+    def set_observing_mode(self,exposure_time,n_exposures,sci_filter,wvs,dwvs=None, mode="off-axis"):
         '''
         Sets the current observing setup
         '''
@@ -436,6 +437,11 @@ class hispec(Instrument):
         self.n_exposures = n_exposures
 
         self.set_current_filter(sci_filter)
+
+        if mode != "off-axis" or mode != "on-axis":
+            raise ValueError("'mode' must be 'off-axis' or 'on-axis'")
+
+        self.mode = mode
 
         self.current_wvs = wvs
         if dwvs is None:
@@ -461,7 +467,7 @@ class hispec(Instrument):
         Return the cut on, center and cut off wavelengths in microns of the different science filters.
         '''
 
-        filter_options = {"Y":(0.940*u.micron,1.018*u.micron,1.090*u.micron),
+        filter_options = {"CFHT-Y":(0.940*u.micron,1.018*u.micron,1.090*u.micron),
                           "TwoMASS-J":(1.1*u.micron,1.248*u.micron,1.360*u.micron),
                           "TwoMASS-H":(1.480*u.micron,1.633*u.micron,1.820*u.micron),
                           "TwoMASS-K":(1.950*u.micron,2.2*u.micron,2.350*u.micron)}
@@ -501,11 +507,11 @@ class hispec(Instrument):
             raise ValueError("Your current filter of {} is not in the available filters: {}".format(self.current_filter,self.filters))
 
         #Will do this by band for now. 
-        th_ao = {"Y":0.60,"TwoMASS-J":0.63,"TwoMASS-H":0.66,"TwoMASS-K":0.73}.get(self.current_filter) #Ao throughput measured by P. Wizinowich
-        th_fiu = {"Y":0.66,"TwoMASS-J":0.68,"TwoMASS-H":0.7,"TwoMASS-K":0.72}.get(self.current_filter) #KPIC OAPS+FM+dichroic
+        th_ao = {"CFHT-Y":0.60,"TwoMASS-J":0.63,"TwoMASS-H":0.66,"TwoMASS-K":0.73}.get(self.current_filter) #Ao throughput measured by P. Wizinowich
+        th_fiu = {"CFHT-Y":0.66,"TwoMASS-J":0.68,"TwoMASS-H":0.7,"TwoMASS-K":0.72}.get(self.current_filter) #KPIC OAPS+FM+dichroic
         th_fiu_insertion = 0.87 * 0.99**4 * 0.98**2 #assumes PIAA optics and AR coating on PIAA and fiber end - Not yet wavelength dependent
         th_feu = 1.0 
-        th_fiber = {"Y":0.99,"TwoMASS-J":0.99,"TwoMASS-H":0.99,"TwoMASS-K":0.9}.get(self.current_filter) #standard or ZBLAN 50-meter fibers 
+        th_fiber = {"CFHT-Y":0.99,"TwoMASS-J":0.99,"TwoMASS-H":0.99,"TwoMASS-K":0.9}.get(self.current_filter) #standard or ZBLAN 50-meter fibers 
 
         SR = self.compute_SR(wvs)
 
@@ -527,7 +533,7 @@ class hispec(Instrument):
         self.get_inst_throughput includes everything, whereas this is just the spectrograph. 
         '''
 
-        th_spec = {"Y":0.5,"TwoMASS-J":0.5,"TwoMASS-H":0.5,"TwoMASS-K":0.5}.get(self.current_filter,0.5)
+        th_spec = {"CFHT-Y":0.5,"TwoMASS-J":0.5,"TwoMASS-H":0.5,"TwoMASS-K":0.5}.get(self.current_filter,0.5)
 
         return th_spec*np.ones(np.shape(wvs))
 
@@ -611,6 +617,9 @@ class hispec(Instrument):
         get_speckle_noise - Either an array of length [n,1] if only one wavelength passed, or shape [n,m]
 
         '''
+
+        if self.mode == "on-axis"
+            return np.ones([np.size(separations),np.size(wvs)])
         
         if np.size(wvs) < 2:
             wvs = np.array(wvs)
