@@ -440,7 +440,7 @@ class hispec(Instrument):
 
         self.set_current_filter(sci_filter)
 
-        if mode != "off-axis" or mode != "on-axis":
+        if mode != "off-axis" and mode != "on-axis":
             raise ValueError("'mode' must be 'off-axis' or 'on-axis'")
 
         self.mode = mode
