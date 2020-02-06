@@ -43,6 +43,9 @@ class Instrument():
     def __init__(self,telescope=None):
         pass
 
+        if telescope is not None:
+            self.telescope = telescope
+
     def get_inst_throughput(self, wvs):
         '''
         A function that returns the instrument throughput at a given set of wavelengths
@@ -129,6 +132,8 @@ class PSI_Blue(Instrument):
 
         if telescope is None:
             self.telescope = psisim.telescope.TMT()
+        else:
+            self.telescope = telescope
 
         # The current obseving properties - dynamic
         self.exposure_time = None
@@ -307,6 +312,8 @@ class PSI_Red(PSI_Blue):
 
         if telescope is None:
             self.telescope = psisim.telescope.TMT()
+        else:
+            self.telescope = telescope
 
 
     def set_observing_mode(self,exposure_time,n_exposures,sci_filter,R,wvs,dwvs=None):
@@ -407,6 +414,8 @@ class hispec(Instrument):
 
         if telescope is None:
             self.telescope = psisim.telescope.Keck()
+        else:
+            self.telescope = telescope
 
         #AO parameters
         self.nactuators = 32. - 2.0 #The number of DM actuators in one direction
