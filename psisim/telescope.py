@@ -93,7 +93,7 @@ class TMT(Telescope):
     '''
     An implementation of the Telescope class
     '''
-    def __init__(self,airmass = 1.0,water_vapor=  1.0):
+    def __init__(self,airmass = 1.0,water_vapor=  1.0,path="/scr3/dmawet/ETC/"):
         super(TMT, self).__init__(30)
 
         self.temperature = 276 * u.K
@@ -101,7 +101,9 @@ class TMT(Telescope):
         self.airmass = airmass
         self.water_vapor = water_vapor
 
-    def get_sky_background(self, wvs, path="/scr3/dmawet/ETC/",R=1e5):
+        self.path = path #A path to background, transmission and AO files
+
+    def get_sky_background(self, wvs, R=1e5):
         '''
         A function that returns the sky background for a given set of wavelengths. 
 
@@ -119,7 +121,7 @@ class TMT(Telescope):
         solidangle = diffraction_limit**2 * 1.13
 
         #Read in the background file
-        sky_background_tmp = np.genfromtxt(path+'sky/mk_skybg_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'_ph.dat', skip_header=0)
+        sky_background_tmp = np.genfromtxt(self.path+'sky/mk_skybg_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'_ph.dat', skip_header=0)
         sky_background_MK = sky_background_tmp[:,1]
         sky_background_MK_wave = sky_background_tmp[:,0] * u.nm
 
@@ -136,18 +138,17 @@ class TMT(Telescope):
         #Return the function in units that we like. 
         return sky_background.to(u.ph/u.s/u.cm**2/u.AA,equivalencies=u.spectral_density(wvs))
 
-    def get_atmospheric_transmission(self,wave,path="/scr3/dmawet/ETC/",R=1e5):
+    def get_atmospheric_transmission(self,wave,R=1e5):
         '''
         A function that computes the sky and telescope throughput 
 
         Arguments 
         ----------
         wave     - A single wavelength or array of wavelengths [microns]
-        path    - The path we we can find the transmission files
         '''
 
         #Read in the sky transmission for the current observing conditions
-        sky_trans_tmp = np.genfromtxt(path+'sky/mktrans_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'.dat', skip_header=0)
+        sky_trans_tmp = np.genfromtxt(self.path+'sky/mktrans_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'.dat', skip_header=0)
         sky_trans = sky_trans_tmp[:,1]
         sky_trans_wave = sky_trans_tmp[:,0]*u.micron #* u.nm
 
@@ -179,7 +180,7 @@ class Keck(Telescope):
     '''
     An implementation of the Telescope class
     '''
-    def __init__(self,airmass = 1.0,water_vapor=  1.0):
+    def __init__(self,airmass = 1.0,water_vapor=  1.0,path="/scr3/dmawet/ETC/"):
         super(Keck, self).__init__(9.85)
 
         self.temperature = 276 * u.K
@@ -187,7 +188,9 @@ class Keck(Telescope):
         self.airmass = airmass
         self.water_vapor = water_vapor
 
-    def get_sky_background(self, wvs, path="/scr3/dmawet/ETC/",R=1e5):
+        self.path = path #A path to background, transmission and AO files
+
+    def get_sky_background(self, wvs, R=1e5):
         '''
         A function that returns the sky background for a given set of wavelengths. 
 
@@ -205,7 +208,7 @@ class Keck(Telescope):
         solidangle = diffraction_limit**2 * 1.13
 
         #Read in the background file
-        sky_background_tmp = np.genfromtxt(path+'sky/mk_skybg_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'_ph.dat', skip_header=0)
+        sky_background_tmp = np.genfromtxt(self.path+'sky/mk_skybg_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'_ph.dat', skip_header=0)
         sky_background_MK = sky_background_tmp[:,1]
         sky_background_MK_wave = sky_background_tmp[:,0] * u.nm
 
@@ -222,18 +225,17 @@ class Keck(Telescope):
         #Return the function in units that we like. 
         return sky_background.to(u.ph/u.s/u.cm**2/u.AA,equivalencies=u.spectral_density(wvs))
 
-    def get_atmospheric_transmission(self,wave,path="/scr3/dmawet/ETC/",R=1e5):
+    def get_atmospheric_transmission(self,wave,R=1e5):
         '''
         A function that computes the sky and telescope throughput 
 
         Arguments 
         ----------
         wave     - A single wavelength or array of wavelengths [microns]
-        path    - The path we we can find the transmission files
         '''
 
         #Read in the sky transmission for the current observing conditions
-        sky_trans_tmp = np.genfromtxt(path+'sky/mktrans_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'.dat', skip_header=0)
+        sky_trans_tmp = np.genfromtxt(self.path+'sky/mktrans_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'.dat', skip_header=0)
         sky_trans = sky_trans_tmp[:,1]
         sky_trans_wave = sky_trans_tmp[:,0]*u.micron #* u.nm
 

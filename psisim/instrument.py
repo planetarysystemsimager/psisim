@@ -547,7 +547,7 @@ class hispec(Instrument):
 
         return inst_therm
 
-    def load_scale_aowfe(self,seeing,airmass,site_median_seeing=0.6,path="/scr3/dmawet/ETC/"):
+    def load_scale_aowfe(self,seeing,airmass,site_median_seeing=0.6):
         '''
         A function that returns ao wavefront errors as a function of rmag
 
@@ -557,6 +557,8 @@ class hispec(Instrument):
         airmass  -  The current airmass [float
         '''
         
+        path = self.telescope.path
+
         #Read in the ao_wfe
         ao_wfe=np.genfromtxt(path+'aowfe/hispec_modhis_ao_errorbudgetb.csv', delimiter=',',skip_header=1)
         ao_rmag = ao_wfe[:,0]
@@ -576,14 +578,16 @@ class hispec(Instrument):
 
         return ao_rmag,ao_wfe_ngs*u.nm,ao_wfe_lgs*u.nm
 
-    def compute_SR(self,wave,path="/scr3/dmawet/ETC/"):
+    def compute_SR(self,wave):
         '''
         Compute the Strehl ratio given the wavelengths, host magnitude and telescope (which contains observing conditions)
         '''
 
+        path = self.telescope.path
+
         #Get the AO WFE as a function of rmag
         ao_rmag,ao_wfe_ngs,ao_wfe_lgs = self.load_scale_aowfe(self.telescope.seeing,self.telescope.airmass,
-                                            site_median_seeing=self.telescope.median_seeing,path=path)
+                                            site_median_seeing=self.telescope.median_seeing)
 
         #We take the minimum wavefront error between natural guide star and laser guide star errors
         ao_wfe = np.min([np.interp(self.ao_mag,ao_rmag, ao_wfe_ngs),np.interp(self.ao_mag,ao_rmag, ao_wfe_lgs)]) * u.nm
