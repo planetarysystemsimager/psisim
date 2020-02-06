@@ -127,8 +127,8 @@ class PSI_Blue(Instrument):
         self.IWA = 0.0055 #Inner working angle in arcseconds. Current value based on 1*lambda/D at 800nm
         self.OWA = 1. #Outer working angle in arcseconds
 
-        # if telescope is None:
-            # self.telescope = 
+        if telescope is None:
+            self.telescope = psisim.telescope.TMT()
 
         # The current obseving properties - dynamic
         self.exposure_time = None
@@ -289,7 +289,7 @@ class PSI_Red(PSI_Blue):
     '''
     An implementation of Instrument for PSI-Red. Currently slightly hacked to inherit PSI Blue for code reuse
     '''
-    def __init__(self):
+    def __init__(self, telescope=None):
         super(PSI_Red,self).__init__()
 
         # The main instrument properties - static
@@ -304,6 +304,10 @@ class PSI_Red(PSI_Blue):
 
         self.IWA = 0.028 #Inner working angle in arcseconds. Current value based on 1*lambda/D at 3 microns
         self.OWA = 3. #Outer working angle in arcseconds
+
+        if telescope is None:
+            self.telescope = psisim.telescope.TMT()
+
 
     def set_observing_mode(self,exposure_time,n_exposures,sci_filter,R,wvs,dwvs=None):
         '''
@@ -378,7 +382,7 @@ class hispec(Instrument):
     An implementation of Instrument for Hispec
     '''
 
-    def __init__(self,telescope):
+    def __init__(self,telescope=None):
         super(hispec,self).__init__()
 
         try:
@@ -401,7 +405,8 @@ class hispec(Instrument):
         self.qe = 0.95 * u.electron/u.ph
         self.temperature = 276*u.K
 
-        self.telescope = telescope
+        if telescope is None:
+            self.telescope = psisim.telescope.Keck()
 
         #AO parameters
         self.nactuators = 32. - 2.0 #The number of DM actuators in one direction
