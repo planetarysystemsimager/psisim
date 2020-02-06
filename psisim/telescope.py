@@ -227,7 +227,7 @@ class Keck(Telescope):
 
     def get_atmospheric_transmission(self,wave,R=1e5):
         '''
-        A function that computes the sky and telescope throughput 
+        A function that computes the sky transmission as a function of wavelength 
 
         Arguments 
         ----------

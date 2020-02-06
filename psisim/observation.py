@@ -165,7 +165,11 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
         for i,noise in enumerate(total_noise):
             # import pdb; pdb.set_trace()
             ## TODO: Make this poisson so that it's valid still in low photon count regime. 
-            detector_spectrum[i] = np.random.normal(detector_spectrum[i],noise)
+            if detector_spectrum[i] != detector_spectrum[i]:
+                detector_spectrum[i] = np.nan
+            else:
+                # import pdb; pdb.set_trace()
+                detector_spectrum[i] = np.random.normal(detector_spectrum[i].value,noise.value)*noise.unit
 
     #TODO: Currently everything is in e-. We likely want it in a different unit at the end. 
     
