@@ -40,7 +40,7 @@ class Instrument():
 
     '''
 
-    def __init__(self):
+    def __init__(self,telescope=None):
         pass
 
     def get_inst_throughput(self, wvs):
@@ -111,7 +111,7 @@ class PSI_Blue(Instrument):
     '''
     An implementation of Instrument for PSI-Blue
     '''
-    def __init__(self):
+    def __init__(self,telescope=None):
         super(PSI_Blue,self).__init__()
 
         # The main instrument properties - static
@@ -127,6 +127,8 @@ class PSI_Blue(Instrument):
         self.IWA = 0.0055 #Inner working angle in arcseconds. Current value based on 1*lambda/D at 800nm
         self.OWA = 1. #Outer working angle in arcseconds
 
+        # if telescope is None:
+            # self.telescope = 
 
         # The current obseving properties - dynamic
         self.exposure_time = None
@@ -618,7 +620,7 @@ class hispec(Instrument):
 
         '''
 
-        if self.mode == "on-axis"
+        if self.mode == "on-axis":
             return np.ones([np.size(separations),np.size(wvs)])
         
         if np.size(wvs) < 2:
