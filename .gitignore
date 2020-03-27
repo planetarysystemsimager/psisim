@@ -104,3 +104,4 @@ venv.bak/
 .mypy_cache/
 .vscode/launch.json
 blub
+Tutorials/.vscode/settings.json
