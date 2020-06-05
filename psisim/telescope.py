@@ -172,7 +172,7 @@ class TMT(Telescope):
         
         '''
 
-        throughput = {'Y':0.88,"TwoMASS-J":0.88,"TwoMASS-H":0.88,"TwoMASS-K":0.88}.get(band,0.88)
+        throughput = {"CFHT-Y":0.88,"TwoMASS-J":0.88,"TwoMASS-H":0.88,"TwoMASS-K":0.88}.get(band,0.88)
         
         return throughput*np.ones(np.shape(wvs))
         
@@ -259,7 +259,7 @@ class Keck(Telescope):
         
         '''
 
-        throughput = {'Y':0.88,"TwoMASS-J":0.88,"TwoMASS-H":0.88,"TwoMASS-K":0.88}.get(band,0.88)
+        throughput = {"CFHT-Y":0.88,"TwoMASS-J":0.88,"TwoMASS-H":0.88,"TwoMASS-K":0.88}.get(band,0.88)
         
         return throughput*np.ones(np.shape(wvs))
     
