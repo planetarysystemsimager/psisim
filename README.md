@@ -4,13 +4,13 @@ Tool for the Planet Systems Imager to simulate the universe, generate planet spe
 
 Features of `psisim`:
 
-  * Create various exoplanet populations using [EXOSIMS](https://github.com/dsavransky/EXOSIMS) (e.g., known RV planets, simulated planets following *Kepler* occurence rates)
-  * Simulate reflected and thermal emission spectra of gas giants and terrestrial planets using [PICASO](https://github.com/natashabatalha/picaso)
-  * Simulate planet fluxes based on evolutionary cooling models
-  * Estimate polarized fluxes of exoplanets
-  * Performance estimates of the AO system as a function of star brightness and ability to correct atmospheric turbulence
-  * Handle detector noise, thermal emission, sky transmission
-  * Object orietented so easy to implement multiple sites and instrumnets
+  * Create various exoplanet populations using [EXOSIMS](https://github.com/dsavransky/EXOSIMS) (e.g., known RV planets, simulated planets following *Kepler* occurence rates),
+  * Simulate reflected and thermal emission spectra of gas giants and terrestrial planets using [PICASO](https://github.com/natashabatalha/picaso),
+  * Simulate planet fluxes based on evolutionary cooling models,
+  * Estimate polarized fluxes of exoplanets,
+  * Performance estimates of the AO system as a function of star brightness and ability to correct atmospheric turbulence,
+  * Handle detector noise, thermal emission, sky transmission, and
+  * Object orietented so easy to implement multiple sites and instruments.
 
 
 ## Installation
