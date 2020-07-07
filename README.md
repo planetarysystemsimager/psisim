@@ -16,7 +16,7 @@ Many of these features are works in progress so please contact Max or Jason if y
 
 ## Installation
 
-Pull this respository:
+Pull this repository: 
 ```
 > git clone https://github.com/planetarysystemsimager/psisim.git
 ```
@@ -25,11 +25,19 @@ Move into that directory and run the `setup.py` script to install. Use the devel
 > python setup.py develop
 ```
 
-Optionally install [EXOSIMS](https://github.com/dsavransky/EXOSIMS) (if you want to simulate exoplanet populations) and [PICASO](https://github.com/natashabatalha/picaso) (if you want to generate exoplanet spectra on the fly) following the documentation for the respective packages.
+In order to run the simulations, HISPEC error budgets and sampled atmospheric data must also be downloaded. At the moment, these are hosted online by [Jason](https://caltech.app.box.com/s/ce7hgt56usd1vfvzhn2kv8n7d9cojro6)
+
+Optionally install [EXOSIMS](https://github.com/dsavransky/EXOSIMS) (if you want to simulate exoplanet populations) and [PICASO](https://github.com/natashabatalha/picaso) (if you want to generate exoplanet spectra on the fly) following the documentation for the respective packages. Installation can also be achieved through cloning the github repositories.
 
 We currently support pickles and Castelli-Kurucz stellar models through the **pysynphot** package. In order to use them you need to install pysynphot and download those stellar spectra. 
 
 ### High-resolution simulations
-If you want to simulate high resolution spectra (e.g. for HISPEC, MODHIS, etc.) you also need to install the **speclite** and **PyAstronomy** packages.
 
-We currently support high-resolution grids of Phoenix and Sonora models. For those you need to download the grids yourself and then pass their path as **user_params** to the **get_stellar_spectrum** function. Hopefully in the future we will add some more detailed instructions on how to set this up. 
+If you want to simulate high resolution spectra (e.g. for HISPEC, MODHIS, etc.) you also need to install the **speclite** and **PyAstronomy** packages. We currently support high-resolution grids of Phoenix and Sonora models. Download these files into the same directory, e.g. **/scr3/dmawet/ETC/**, and make sure paths are as follows.
+
+The full Phoenix HiRes Library can be downloaded through FTP here: (ftp://phoenix.astro.physik.uni-goettingen.de/HiResFITS/). Specific Phoenix models can be installed [here](http://phoenix.astro.physik.uni-goettingen.de/?page_id=15) if desired.
+Download Phoenix items into **/scr3/dmawet/ETC/** + *HIResFITS_lib/phoenix.astro.physik.uni-goettingen.de/HiResFITS/PHOENIX-ACES-AGSS-COND-2011/*. 
+
+Your directory should read: ***/scr3/dmawet/ETC**/HIResFITS_lib/phoenix.astro.physik.uni-goettingen.de/HiResFITS/PHOENIX-ACES-AGSS-COND-2011/host_model/host_filename*
+
+[Sonora](https://zenodo.org/record/1309035#.XbtLtpNKhMA) files should be unzipped into **/scr3/dmawet/ETC**/Sonora. Your directory should read: ***/scr3/dmawet/ETC**/Sonora/file_name*. 
