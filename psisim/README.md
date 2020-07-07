@@ -35,7 +35,7 @@ We currently support pickles and Castelli-Kurucz stellar models through the **py
 
 If you want to simulate high resolution spectra (e.g. for HISPEC, MODHIS, etc.) you also need to install the **speclite** and **PyAstronomy** packages. We currently support high-resolution grids of Phoenix and Sonora models. Download these files into the same directory, e.g. **/scr3/dmawet/ETC/**, and make sure paths are as follows.
 
-The full [Phoenix HiRes Library](ftp://phoenix.astro.physik.uni-goettingen.de/HiResFITS/) can be downloaded through FTP. Specific Phoenix models can be installed [here](http://phoenix.astro.physik.uni-goettingen.de/?page_id=15) if desired.
+The full Phoenix HiRes Library can be downloaded through FTP here: (ftp://phoenix.astro.physik.uni-goettingen.de/HiResFITS/). Specific Phoenix models can be installed [here](http://phoenix.astro.physik.uni-goettingen.de/?page_id=15) if desired.
 Download Phoenix items into **/scr3/dmawet/ETC/** + *HIResFITS_lib/phoenix.astro.physik.uni-goettingen.de/HiResFITS/PHOENIX-ACES-AGSS-COND-2011/*. 
 
 Your directory should read: ***/scr3/dmawet/ETC**/HIResFITS_lib/phoenix.astro.physik.uni-goettingen.de/HiResFITS/PHOENIX-ACES-AGSS-COND-2011/host_model/host_filename*
