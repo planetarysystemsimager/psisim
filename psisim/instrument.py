@@ -516,24 +516,27 @@ class hispec(Instrument):
 
     def get_inst_throughput(self,wvs):
         '''
-        To be filled in
+        Reads instrument throughput from budget file and interpolates to the given wavelengths
         '''
 
         if self.current_filter not in self.filters:
             raise ValueError("Your current filter of {} is not in the available filters: {}".format(self.current_filter,self.filters))
 
-        #Will do this by band for now. 
-        th_ao = {"CFHT-Y":0.60,"TwoMASS-J":0.63,"TwoMASS-H":0.66,"TwoMASS-K":0.73}.get(self.current_filter) #Ao throughput measured by P. Wizinowich
-        th_fiu = {"CFHT-Y":0.66,"TwoMASS-J":0.68,"TwoMASS-H":0.7,"TwoMASS-K":0.72}.get(self.current_filter) #KPIC OAPS+FM+dichroic
-        th_fiu_insertion = 0.87 * 0.99**4 * 0.98**2 #assumes PIAA optics and AR coating on PIAA and fiber end - Not yet wavelength dependent
-        th_feu = 1.0 
-        th_fiber = {"CFHT-Y":0.99,"TwoMASS-J":0.99,"TwoMASS-H":0.99,"TwoMASS-K":0.9}.get(self.current_filter) #standard or ZBLAN 50-meter fibers 
+        # By wavelength from throughput budget file
+        path = self.telescope.path
+        th_data = np.genfromtxt(path+'/throughput/Throughput budget.csv',skip_header=1,usecols=np.arange(5,166),delimiter=',',missing_values='')
+
+        th_wvs = th_data[0] * u.micron
+
+        th_ao = np.interp(wvs, th_wvs, np.prod(th_data[8:19], axis=0)) # AO throughput 
+        th_fiu = np.interp(wvs, th_wvs, np.prod(th_data[20:35], axis=0)) # KPIC throughput
+        #th_fcd = np.interp(wvs, th_wvs, th_data[36]) # Fiber Dynamic Coupling (need function to scale with Strehl/NGS, currently unused)
+        th_fiber = np.interp(wvs, th_wvs, np.prod(th_data[36:45], axis=0)) # Fiber throughput (including fcd above)
+        th_spec = np.interp(wvs, th_wvs, np.prod(th_data[46:59], axis=0)) # HISPEC - SPEC throughput
 
         SR = self.compute_SR(wvs)
 
-        th_spec = self.get_spec_throughput(wvs)
-        th_inst = th_ao * th_fiu * th_fiu_insertion * th_feu * th_fiber * th_spec * np.ones(wvs.shape) * SR
-
+        th_inst = th_ao * th_fiu * th_fiber * th_spec * SR
         return th_inst
     
     def get_inst_emissivity(self,wvs):
@@ -597,7 +600,6 @@ class hispec(Instrument):
         # elif isinstance(self, kpic_phaseII):
         #     ao_wfe_ngs=ao_wfe[:,2] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
         #     ao_wfe_lgs=ao_wfe[:,3] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
-
         return ao_rmag,ao_wfe_ngs*u.nm,ao_wfe_lgs*u.nm
 
     def compute_SR(self,wave):
@@ -614,7 +616,7 @@ class hispec(Instrument):
         #We take the minimum wavefront error between natural guide star and laser guide star errors
         ao_wfe = np.min([np.interp(self.ao_mag,ao_rmag, ao_wfe_ngs),np.interp(self.ao_mag,ao_rmag, ao_wfe_lgs)]) * u.nm
 
-        #Compute the strehl ratio
+        #Compute the ratio
         # import pdb; pdb.set_trace()
         SR = np.array(np.exp(-(2*np.pi*ao_wfe.to(u.micron)/wave)**2))
         return SR
