@@ -735,3 +735,439 @@ class modhis(hispec):
 
     #To be continued. 
 
+
+class kpic_phaseII(Instrument):
+    '''
+    An implementation of Instrument for KPIC Phase II
+    '''
+
+    def __init__(self,telescope=None):
+        super(kpic_phaseII,self).__init__()
+
+        try:
+            import speclite
+        except Exception as e:
+            print(e)
+            print("You need to install the speclite python package to use hispec, modhis and kpic simulators")
+
+
+        # Spectrograph Properties
+        self.current_R = 35e3
+        self.wavelength_sampling = 3 # How oversampled is your spectrum?
+        self.spatial_sampling = 3 #How many spatial pixels per wavelength channel
+
+        # The main instrument properties - static
+        self.read_noise = 8 *u.electron # * u.photon#e-/pix/fr
+        self.dark_current = 0.5*u.electron/u.s * self.spatial_sampling #electrons/s/wavelength channel
+        self.det_welldepth = 1e5 *u.photon
+        self.det_linearity = 0.66*self.det_welldepth
+        self.qe = 0.95 * u.electron/u.ph
+        self.temperature = 276*u.K
+
+        if telescope is None:
+            self.telescope = psisim.telescope.Keck()
+        else:
+            self.telescope = telescope
+
+        #AO parameters
+        self.nactuators = 32. - 2.0 #The number of DM actuators in one direction
+        self.fiber_contrast_gain = 10. #The gain in contrast thanks to the fiber. 
+        self.p_law_dh = -2.0 #The some power law constant Dimitri should explain. 
+        ### DAN TODO: check ao_filter below (not in Dimitri code)
+        self.ao_filter = 'bessell-I' #Available AO filters
+        self.d_ao = 0.15 * u.m
+        self.area_ao = np.pi*(self.d_ao/2)**2
+
+
+        
+        self.name = "Keck-KPIC-PhaseII"
+        
+        #Acceptable filters
+        ### DAN TODO: check filters below (not clearly set for kpic in Dimitri code)
+        self.filters = ['CFHT-Y','TwoMASS-J','TwoMASS-H','TwoMASS-K'] #Available observing filters
+
+        # self.lsf_width = 1.0/2.35 #The linespread function width in pixels (assuming Gaussian for now)
+        
+
+        # The current obseving properties - dynamic
+        self.exposure_time = None
+        self.n_exposures = None
+        self.current_filter = None
+        self.current_wvs = None
+        self.current_dwvs = None
+        self.ao_mag = None
+        self.mode = None
+        self.vortex_charge = None      # needed for vfn mode only
+    
+    def set_observing_mode(self,exposure_time,n_exposures,sci_filter,wvs,dwvs=None, mode="vfn", vortex_charge=None):
+        '''
+        Sets the current observing setup
+        '''
+
+        self.exposure_time = exposure_time *u.s
+        self.n_exposures = n_exposures
+
+        self.set_current_filter(sci_filter)
+
+        if mode.lower() not in ["vfn", "off-axis", "on-axis"]:
+            raise ValueError("'mode' must be 'vfn', 'off-axis' or 'on-axis'")
+
+        self.mode = mode.lower()    # lower() to remove errors from common VFN capitalization
+
+        # Set vortex charge for vfn mode
+        if self.mode == 'vfn' and (vortex_charge not in [1,2]):
+            raise ValueError("'vfn' mode requires a 'vortex_charge' of 1 or 2")
+        self.vortex_charge = vortex_charge
+
+        self.current_wvs = wvs
+        if dwvs is None:
+            dwvs = np.abs(wvs - np.roll(wvs, 1))
+            dwvs[0] = dwvs[1]
+        self.current_dwvs = dwvs
+
+        #Set the line spread function width to be the 
+        self.lsf_width = self.get_wavelength_bounds(sci_filter)[1]/self.current_R
+        
+    def set_current_filter(self,filter_name):
+        '''
+        Sets the current filter
+        '''
+
+        if filter_name in self.filters:
+            self.current_filter=filter_name
+        else:
+            raise ValueError("Your filter {} is not in the filter list: {}".format(filter_name,self.filters))
+        
+    def get_wavelength_bounds(self, filter_name):
+        '''
+        Return the cut on, center and cut off wavelengths in microns of the different science filters.
+        '''
+
+        ### DAN TODO: check bandwidth params. Dimitri code has diff values and doesn't have Y,J,H but does have L
+        filter_options = {"CFHT-Y":(0.940*u.micron,1.018*u.micron,1.090*u.micron),
+                          "TwoMASS-J":(1.1*u.micron,1.248*u.micron,1.360*u.micron),
+                          "TwoMASS-H":(1.480*u.micron,1.633*u.micron,1.820*u.micron),
+                          "TwoMASS-K":(1.950*u.micron,2.2*u.micron,2.4*u.micron)}
+
+        return filter_options.get(filter_name)
+
+    def get_wavelength_range(self):
+        '''
+        A function that returns a wavelength array with the given R and wavelength sampling. 
+        '''
+        
+        #Return the lower, center and upper wavelengths for a given filter
+
+        # filter_options = {"Y":(0.960,1.018,1.070),"TwoMASS-J":(1.1,1.248,1.360),"TwoMASS-H":(1.480,1.633,1.820),"TwoMASS-K":(1.950,2.2,2.350)}
+
+        if self.current_filter is None:
+            print("You need to set the current_filter property. \nReturning -1")
+        if self.current_filter not in self.filters:
+            print("You selected filter is not valid. Please choose from {}\n Returning -1".format(filter_options.keys()))
+            return -1
+
+        #Pick the right filter based on the .current_filter property
+        filter_on,filter_center,filter_off = self.get_wavelength_bounds(self.current_filter)
+        
+        #Get the wavelength channel size, assuming the current R and wavelength sampling at the center wavelength
+        delta_wv = filter_center/self.current_R/self.wavelength_sampling
+        wavelengths = np.arange(filter_on.value,filter_off.value,delta_wv.value) * u.micron
+
+        return wavelengths
+
+    def get_inst_throughput(self,wvs):
+        '''
+        To be filled in
+        '''
+
+        if self.current_filter not in self.filters:
+            raise ValueError("Your current filter of {} is not in the available filters: {}".format(self.current_filter,self.filters))
+
+        #Will do this by band for now. 
+        ### DAN TODO: check throughputs below 
+        th_ao = {"CFHT-Y":0.60,"TwoMASS-J":0.63,"TwoMASS-H":0.66,"TwoMASS-K":0.633}.get(self.current_filter) #K-band from Nem's Feb 2020 report
+        ### Dan TODO: add losses from PIAA surface reflections to th_fiu
+        th_fiu = {"CFHT-Y":0.66,"TwoMASS-J":0.68,"TwoMASS-H":0.7,"TwoMASS-K":0.66}.get(self.current_filter) #K-band from Dimitri code (KPIC OAPS+FM+dichroic)
+        ### Dan TODO: add "fiu insertion" effects to get_speckle and get_planet functions
+        #th_fiu_insertion = 0.87 * 0.99**4 * 0.98**2 #assumes PIAA optics and AR coating on PIAA and fiber end - Not yet wavelength dependent
+        th_feu = 0.89   #from Dimitri code
+        th_fiber = {"CFHT-Y":0.99,"TwoMASS-J":0.99,"TwoMASS-H":0.99,"TwoMASS-K":0.98}.get(self.current_filter) #from Dimitri code
+        th_fib_endFace = 0.98**2 # assuming AR coating on both fiber ends - not yet wavelength dependent
+
+        # Dan TODO: figure out if SR is needed for VFN (thinking it's not)
+        SR = self.compute_SR(wvs)
+        if self.mode == 'vfn':
+            SR = np.ones(SR.shape)
+
+        th_spec = self.get_spec_throughput(wvs)
+        th_inst = th_ao * th_fiu * th_feu * th_fiber * th_fib_endFace * th_spec * np.ones(wvs.shape) * SR
+
+        return th_inst
+    
+    def get_inst_emissivity(self,wvs):
+        '''
+        The instrument emissivity
+        '''
+
+        return (1-self.get_inst_throughput(wvs))
+
+    def get_spec_throughput(self, wvs):
+        '''
+        The throughput of the spectrograph - different than the throughput of the inst that you get in self.get_inst_throughput. 
+        self.get_inst_throughput includes everything, whereas this is just the spectrograph. 
+        '''
+        ### DAN TODO: check K-band throughputs below
+        # K-band value from Dimitri Code
+        th_spec = {"CFHT-Y":0.5,"TwoMASS-J":0.5,"TwoMASS-H":0.5,"TwoMASS-K":0.2}.get(self.current_filter,0.5)
+
+        return th_spec*np.ones(np.shape(wvs))
+
+    def get_instrument_background(self,wvs,solidangle):
+        '''
+        Returns the instrument background at each wavelength in units of photons/s/Angstrom/arcsecond**2
+        '''
+
+        inst_therm = blackbody_lambda(wvs, self.temperature)
+        inst_therm *= solidangle
+        inst_therm = inst_therm.to(u.ph/(u.micron * u.s * u.cm**2),equivalencies=u.spectral_density(wvs)) * self.area_ao.to(u.cm**2)
+        inst_therm *= self.get_inst_emissivity(wvs)
+
+        # inst_therm = inst_therm.to(u.ph/u.s/u.arcsec**2/u.Angstrom)
+
+        inst_therm *= self.get_spec_throughput(wvs)
+
+        return inst_therm
+
+    def load_scale_aowfe(self,seeing,airmass,site_median_seeing=0.6):
+        '''
+        A function that returns ao wavefront errors as a function of rmag
+
+        Args:
+        path     -  Path to an ao errorbudget file [str]
+        seeing   -  The current seeing conditions in arcseconds  [float]
+        airmass  -  The current airmass [float]
+        '''
+        
+        path = self.telescope.path
+
+        ### DAN TODO: check file below; I updated it to what Dimitri's code has
+            # TODO  Also check the indexes (:,4 and :,5) below which I took from Dimitri's code
+        #Read in the ao_wfe
+        ao_wfe=np.genfromtxt(path+'aowfe/hispec_modhis_ao_errorbudget_v3.csv', delimiter=',',skip_header=1)
+        ao_rmag = ao_wfe[:,0]
+
+        # indexes for ao_wfe from Dimitri Code
+        ao_wfe_ngs=ao_wfe[:,4] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
+        ao_wfe_lgs=ao_wfe[:,5] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
+
+        return ao_rmag,ao_wfe_ngs*u.nm,ao_wfe_lgs*u.nm
+
+    def compute_SR(self,wave):
+        '''
+        Compute the Strehl ratio given the wavelengths, host magnitude and telescope (which contains observing conditions)
+        '''
+
+        path = self.telescope.path
+
+        #Get the AO WFE as a function of rmag
+        ao_rmag,ao_wfe_ngs,ao_wfe_lgs = self.load_scale_aowfe(self.telescope.seeing,self.telescope.airmass,
+                                            site_median_seeing=self.telescope.median_seeing)
+
+        #We take the minimum wavefront error between natural guide star and laser guide star errors
+        ao_wfe = np.min([np.interp(self.ao_mag,ao_rmag, ao_wfe_ngs),np.interp(self.ao_mag,ao_rmag, ao_wfe_lgs)]) * u.nm
+
+        #Compute the strehl ratio
+        # import pdb; pdb.set_trace()
+        SR = np.array(np.exp(-(2*np.pi*ao_wfe.to(u.micron)/wave)**2))
+        return SR
+
+    def get_speckle_noise(self,separations,ao_mag,filter,wvs,star_spt,telescope,ao_mag2=None):
+        '''
+        Returns the contrast for a given list of separations. 
+
+        Inputs: 
+        separations     - A list of separations at which to calculate the speckle noise in arcseconds [float list length n]. Assumes these are sorted. 
+        ao_mag          - The magnitude in the ao band, here assumed to be I-band
+        wvs          - A list of wavelengths in microns [float length m]
+        telescope    - A psisim telescope object. 
+
+        Outputs: 
+        get_speckle_noise - Either an array of length [n,1] if only one wavelength passed, or shape [n,m]
+
+        '''
+
+        ### Dan TODO: make sure each mode accounts for coupling efficiency (ex. 0.82 in theory w/o PIAA)
+        ### Dan TODO: decide if PIAA will be optional via flag or permanent
+        ### Dan TODO: add ADC residuals effect
+        ### Dan TODO: @Max, why feed "filter", "star_spt" if not used. Why feed "telescope" if already available from self.telescope?
+
+        if self.mode != 'vfn':
+            print("Warning: only 'vfn' mode has been confirmed")
+        
+        if self.mode == "on-axis":
+           return np.ones([np.size(separations),np.size(wvs)])
+        
+        if np.size(wvs) < 2:
+            wvs = np.array(wvs)
+
+        if self.mode == "off-axis":
+            #-- Deal with nominal KPIC mode (fiber centered on planet)
+            # Dan TODO: this was copied from HISPEC instrument. Check if any mods are needed for KPIC
+
+            #Get the Strehl Ratio
+            SR = self.compute_SR(wvs)
+
+            p_law_kolmogorov = -11./3
+            p_law_ao_coro_filter = self.p_law_dh#-p_law_kolmogorov 
+
+            r0 = 0.55e-6/(telescope.seeing.to(u.arcsecond).value/206265) * u.m #Easiest to ditch the seeing unit here. 
+
+            #The AO control radius in units of lambda/D
+            cutoff = self.nactuators/2
+
+            contrast = np.zeros([np.size(separations),np.size(wvs)])
+
+            if np.size(separations) < 2:
+                separations = np.array([separations.value])*separations.unit
+
+            # #Do this by wavelength
+            # for i, wv in enumerate(wvs):
+            #     ang_sep_resel_in = separations/206265/u.arcsecond*telescope.diameter/wv.to(u.m) #Convert separations from arcseconds to units of lambda/D
+
+            #     if isinstance(ang_sep_resel_in.value,float):
+            #         ang_sep_resel_in = [ang_sep_resel_in]
+            #         index_in = 1
+            #     else:
+            #         index_in = np.max(np.where(ang_sep_resel_in.value < cutoff))
+
+            #     ang_sep_resel_step=0.1
+            #     ang_sep_resel=np.arange(0,10000,ang_sep_resel_step)
+            #     index=np.squeeze(np.where(ang_sep_resel == cutoff))
+
+            #     #Dimitri to put in references to this math
+            #     r0_sc = r0 * (wv/(0.55*u.micron))**(6./5)
+            #     w_halo = telescope.diameter / r0_sc
+
+            #     f_halo = np.pi*(1-SR[i])*0.488/w_halo**2 * (1+11./6*(ang_sep_resel/w_halo)**2)**(-11/6.)
+
+            #     contrast[:,i] = np.interp(ang_sep_resel_in,ang_sep_resel,f_halo)
+
+            #     contrast_inside = f_halo[index]*(ang_sep_resel/ang_sep_resel[index])**p_law_ao_coro_filter
+            #     contrast[:,i][:index_in] = np.interp(ang_sep_resel_in[:index_in],ang_sep_resel,contrast_inside)
+
+                #Inside the control radius, we modify the raw contrast
+                # contrast[:,i][:index] = contrast[:,i][index]
+            
+            #Dimitri to put in references to this math
+            r0_sc = r0 * (wvs/(0.55*u.micron))**(6./5)
+            w_halo = telescope.diameter / r0_sc
+            
+            for i,sep in enumerate(separations):
+                ang_sep_resel_in = sep/206265/u.arcsecond*telescope.diameter/wvs.to(u.m) #Convert separations from arcseconds to units of lambda/D
+
+                # import pdb; pdb.set_trace()
+                f_halo = np.pi*(1-SR)*0.488/w_halo**2 * (1+11./6*(ang_sep_resel_in/w_halo)**2)**(-11/6.)
+
+                
+                contrast_at_cutoff = np.pi*(1-SR)*0.488/w_halo**2 * (1+11./6*(cutoff/w_halo)**2)**(-11/6.)
+                #Fill in the contrast array
+                contrast[i,:] = f_halo
+
+                biggest_ang_sep = np.abs(ang_sep_resel_in - cutoff) == np.min(np.abs(ang_sep_resel_in - cutoff))
+
+                contrast[i][ang_sep_resel_in < cutoff] = contrast_at_cutoff[ang_sep_resel_in < cutoff]*(ang_sep_resel_in[ang_sep_resel_in < cutoff]/cutoff)**p_law_ao_coro_filter
+            # import pdb;pdb.set_trace()
+            #Set the contrast inide the AO control radius
+            # import pdb;pdb.set_trace()
+            # if np.size(separations) < 2:
+            #     contrast[ang_sep_resel_in < cutoff] = np.repeat(contrast[biggest_ang_sep,None],contrast.shape[1],axis=1)[ang_sep_resel_in < cutoff]*(ang_sep_resel_in[ang_sep_resel_in < cutoff]/cutoff)**p_law_ao_coro_filter
+            # elif np.size(wvs) < 2:
+            #     contrast[ang_sep_resel_in < cutoff] = np.repeat(contrast[None,biggest_ang_sep],contrast.shape[0],axis=0)[ang_sep_resel_in < cutoff]*(ang_sep_resel_in[ang_sep_resel_in < cutoff]/cutoff)**p_law_ao_coro_filter
+            # else: 
+            #     contrast[ang_sep_resel_in < cutoff] = contrast[biggest_ang_sep]*(ang_sep_resel_in[ang_sep_resel_in < cutoff]/cutoff)**p_law_ao_coro_filter
+            
+            #Apply the fiber contrast gain
+            contrast /= self.fiber_contrast_gain
+
+            #Make sure nothing is greater than 1. 
+            contrast[contrast>1] = 1.
+            
+            return contrast
+
+        elif self.mode == "vfn":
+            #-- Deal with VFN KPIC mode (using Dimitri's old method)
+
+            #Get the AO WFE as a function of rmag
+            ao_rmag,ao_wfe_ngs,ao_wfe_lgs = self.load_scale_aowfe(telescope.seeing,telescope.airmass,
+                                                site_median_seeing=telescope.median_seeing)
+
+            #We take the minimum wavefront error between natural guide star and laser guide star errors
+            ao_wfe = np.min([np.interp(self.ao_mag,ao_rmag, ao_wfe_ngs),np.interp(self.ao_mag,ao_rmag, ao_wfe_lgs)]) * u.nm
+
+            #Pick the WFE coefficient based on the vortex charge. Coeff values emprically determined in simulation
+            if self.vortex_charge == 1:
+                wfe_coeff = 0.844
+            elif self.vortex_charge == 2:
+                wfe_coeff = 1.510
+
+            #Approximate contrast from WFE
+            contrast = (wfe_coeff * ao_wfe.to(u.micron) / wvs)**(2.) # * self.vortex_charge)
+            
+            #Null is independent of the planet separation; use np.tile to replicate results at all seps
+            contrast = np.tile(contrast, (np.size(separations),1))
+
+            #convert to ndarray for consistency with contrast returned by other modes
+            contrast = np.array(contrast)
+            
+            #Make sure nothing is greater than 1. 
+            contrast[contrast>1] = 1.
+            
+            return contrast
+
+        else:
+            raise ValueError("'%s' is a not a supported 'mode'" % (self.mode))
+
+
+    def get_planet_throughput(self,separations,ao_mag,filter,wvs,star_spt,telescope,ao_mag2=None):
+        '''
+        Returns the planet throughput for a given list of separations. 
+
+        Inputs: 
+        separations     - A list of separations at which to calculate the planet throughput in arcseconds [float list length n]. Assumes these are sorted. 
+        ao_mag          - The magnitude in the ao band, here assumed to be I-band
+        wvs          - A list of wavelengths in microns [float length m]
+        telescope    - A psisim telescope object. 
+
+        Outputs: 
+        get_planet_throughput - Either an array of length [n,1] if only one wavelength passed, or shape [n,m]
+
+        '''
+
+        ### Dan TODO: make sure each mode accounts for coupling efficiency (ex. 0.82 in theory w/o PIAA)
+        ### Dan TODO: decide if PIAA will be optional via flag or permanent
+        ### Dan TODO: add ADC residuals effect
+        ### Dan TODO: @Max, why feed "filter", "star_spt" if not used. Why feed "telescope" if already available from self.telescope?
+            # Dan: Remove these excess terms if possible
+
+        if self.mode == 'vfn':
+            path = self.telescope.path
+
+            # load ideal VFN coupling curves
+            th_vfn_ideal = np.genfromtxt(path+'VFN/Charge%d_Ideal.txt'%(self.vortex_charge), delimiter=',', skip_header=0)
+
+            if np.size(separations) < 2:
+                separations = np.array([separations.value])*separations.unit
+
+            th_planet = np.zeros([np.size(separations),np.size(wvs)])
+            for i,sep in enumerate(separations):
+                ang_sep_resel_in = sep.value/(wvs.to(u.m)/telescope.diameter * 206265) #Convert separations from arcseconds to units of lambda/D
+                th_planet[i,:] = np.interp(ang_sep_resel_in, th_vfn_ideal[:,0], th_vfn_ideal[:,1])
+
+        elif self.mode in ['on-axis', 'off-axis']:
+            # Account for speckle injeciton efficiency into fiber
+            th_planet = 0.87 * np.ones([np.size(separations), np.size(wvs)])
+        
+        else:
+            raise ValueError("'%s' is a not a supported 'mode'" % (self.mode))
+
+        return th_planet
