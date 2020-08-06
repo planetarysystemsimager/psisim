@@ -105,3 +105,4 @@ venv.bak/
 .vscode/launch.json
 blub
 Tutorials/.vscode/settings.json
+.vscode/settings.json

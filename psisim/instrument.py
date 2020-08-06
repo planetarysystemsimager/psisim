@@ -1102,7 +1102,15 @@ class kpic_phaseII(Instrument):
             #We take the minimum wavefront error between natural guide star and laser guide star errors
             ao_wfe = np.min([np.interp(self.ao_mag,ao_rmag, ao_wfe_ngs),np.interp(self.ao_mag,ao_rmag, ao_wfe_lgs)]) * u.nm
 
-            contrast = (3. * ao_wfe.to(u.micron)/7 / wvs)**(2. * self.vortex_charge)
+            #Pick the WFE coefficient based on the vortex charge. Coeff values emprically determined in simulation
+            if self.vortex_charge == 1:
+                wfe_coeff = 0.844
+            elif self.vortex_charge == 2:
+                wfe_coeff = 1.510
+
+            #Approximate contrast from WFE
+            contrast = (wfe_coeff * ao_wfe.to(u.micron) / wvs)**(2.) # * self.vortex_charge)
+            
             #Null is independent of the planet separation; use np.tile to replicate results at all seps
             contrast = np.tile(contrast, (np.size(separations),1))
 
