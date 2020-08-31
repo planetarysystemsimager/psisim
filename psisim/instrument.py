@@ -457,12 +457,12 @@ class hispec(Instrument):
 
         self.set_current_filter(sci_filter)
 
-        if mode.lower() not in ['off-axis', 'on-axis', 'pl']:
-            raise ValueError("'mode' must be 'off-axis', 'on-axis', or 'pl'")
+        if mode.lower() not in ['off-axis', 'on-axis', 'photonic_lantern']:
+            raise ValueError("'mode' must be 'off-axis', 'on-axis', or 'photonic_lantern'")
 
         self.mode = mode.lower()
 
-        if self.mode == 'pl':
+        if self.mode == 'photonic_lantern':
             self.n_ch = 7 #Number of output channels for the photonic lantern
         else:
             self.n_ch = None
@@ -629,7 +629,7 @@ class hispec(Instrument):
         # import pdb; pdb.set_trace()
         SR = np.array(np.exp(-(2*np.pi*ao_wfe.to(u.micron)/wave)**2))
 
-        if self.mode == 'pl':
+        if self.mode == 'photonic_lantern':
             # Include the photonic lantern gain
             SR_PL_in = np.array([99.99, 92.7, 73.3, 32.3, 19.5, 10.6])/100.0 # From Jovanovic et al. 2017
             SR_PL_out = np.array([0.5508, 0.5322, 0.5001, 0.4175, 0.3831, 0.3360])/0.96**2 /0.5508 * 0.9 # From Jovanovic et al. 2017
