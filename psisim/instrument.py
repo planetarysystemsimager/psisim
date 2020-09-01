@@ -414,11 +414,11 @@ class hispec(Instrument):
 
         if telescope is None:
             self.telescope = psisim.telescope.Keck()
-            self.th_data = self.telescope.th_data # Avoid reading instrument throughput twice
         else:
             self.telescope = telescope
-            self.th_data = np.genfromtxt(self.telescope.path+'/throughput/Throughput budget.csv',
-                                        skip_header=1,usecols=np.arange(5,166),delimiter=',',missing_values='')
+
+        self.th_data = np.genfromtxt(self.telescope.path+'/throughput/hispec_throughput_budget.csv',
+                                    skip_header=1,usecols=np.arange(5,166),delimiter=',',missing_values='')
 
         #AO parameters
         self.nactuators = 32. - 2.0 #The number of DM actuators in one direction
@@ -534,15 +534,16 @@ class hispec(Instrument):
         th_data = self.th_data
         th_wvs = th_data[0] * u.micron
 
-        th_ao = np.interp(wvs, th_wvs, np.prod(th_data[8:19], axis=0)) # AO throughput 
-        th_fiu = np.interp(wvs, th_wvs, np.prod(th_data[20:35], axis=0)) # KPIC throughput
-        #th_fcd = np.interp(wvs, th_wvs, th_data[36]) # Fiber Dynamic Coupling (need function to scale with Strehl/NGS, currently unused)
-        th_fiber = np.interp(wvs, th_wvs, np.prod(th_data[37:44], axis=0)) # Fiber throughput (excluding fcd above)
-        th_spec = np.interp(wvs, th_wvs, np.prod(th_data[45:58], axis=0)) # HISPEC - SPEC throughput
+        th_ao = np.interp(wvs, th_wvs, np.prod(th_data[2:13], axis=0)) # AO throughput 
+        th_fiu = np.interp(wvs, th_wvs, np.prod(th_data[14:29], axis=0)) # KPIC throughput
+        #th_fcd = np.interp(wvs, th_wvs, th_data[30]) # Fiber Dynamic Coupling (need function to scale with Strehl/NGS, currently unused)
+        th_fiber = np.interp(wvs, th_wvs, np.prod(th_data[31:38], axis=0)) # Fiber throughput (excluding fcd above)
+        th_spec = np.interp(wvs, th_wvs, np.prod(th_data[39:51], axis=0)) # HISPEC - SPEC throughput
 
         SR = self.compute_SR(wvs)
 
         th_inst = th_ao * th_fiu * th_fiber * th_spec * SR
+
         return th_inst
     
     def get_inst_emissivity(self,wvs):
@@ -561,7 +562,7 @@ class hispec(Instrument):
         # By wavelength from throughput budget file
         th_data = self.th_data
         th_wvs = th_data[0] * u.micron
-        th_spec = np.interp(wvs, th_wvs, np.prod(th_data[45:58], axis=0))
+        th_spec = np.interp(wvs, th_wvs, np.prod(th_data[39:51], axis=0))
 
         return th_spec
 

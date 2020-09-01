@@ -191,7 +191,7 @@ class Keck(Telescope):
         self.path = path #A path to background, transmission and AO files
 
         # Throughput data
-        self.th_data = np.genfromtxt(path+'/throughput/Throughput budget.csv',skip_header=1,usecols=np.arange(5,166),delimiter=',',missing_values='')
+        self.th_data = np.genfromtxt(path+'/throughput/keck_throughput_budget.csv',skip_header=1,usecols=np.arange(5,166),delimiter=',',missing_values='')
 
 
     def get_sky_background(self, wvs, R=1e5):
