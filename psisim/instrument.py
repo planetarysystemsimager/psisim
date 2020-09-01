@@ -417,6 +417,9 @@ class hispec(Instrument):
         else:
             self.telescope = telescope
 
+        self.th_data = np.genfromtxt(self.telescope.path+'/throughput/hispec_throughput_budget.csv',
+                                    skip_header=1,usecols=np.arange(5,166),delimiter=',',missing_values='')
+
         #AO parameters
         self.nactuators = 32. - 2.0 #The number of DM actuators in one direction
         self.fiber_contrast_gain = 3. #The gain in congtrast thanks to the fiber. 
@@ -454,10 +457,15 @@ class hispec(Instrument):
 
         self.set_current_filter(sci_filter)
 
-        if mode != "off-axis" and mode != "on-axis":
-            raise ValueError("'mode' must be 'off-axis' or 'on-axis'")
+        if mode.lower() not in ['off-axis', 'on-axis', 'photonic_lantern']:
+            raise ValueError("'mode' must be 'off-axis', 'on-axis', or 'photonic_lantern'")
 
-        self.mode = mode
+        self.mode = mode.lower()
+
+        if self.mode == 'photonic_lantern':
+            self.n_ch = 7 #Number of output channels for the photonic lantern
+        else:
+            self.n_ch = None
 
         self.current_wvs = wvs
         if dwvs is None:
@@ -523,20 +531,19 @@ class hispec(Instrument):
             raise ValueError("Your current filter of {} is not in the available filters: {}".format(self.current_filter,self.filters))
 
         # By wavelength from throughput budget file
-        path = self.telescope.path
-        th_data = np.genfromtxt(path+'/throughput/Throughput budget.csv',skip_header=1,usecols=np.arange(5,166),delimiter=',',missing_values='')
-
+        th_data = self.th_data
         th_wvs = th_data[0] * u.micron
 
-        th_ao = np.interp(wvs, th_wvs, np.prod(th_data[8:19], axis=0)) # AO throughput 
-        th_fiu = np.interp(wvs, th_wvs, np.prod(th_data[20:35], axis=0)) # KPIC throughput
-        #th_fcd = np.interp(wvs, th_wvs, th_data[36]) # Fiber Dynamic Coupling (need function to scale with Strehl/NGS, currently unused)
-        th_fiber = np.interp(wvs, th_wvs, np.prod(th_data[36:45], axis=0)) # Fiber throughput (including fcd above)
-        th_spec = np.interp(wvs, th_wvs, np.prod(th_data[46:59], axis=0)) # HISPEC - SPEC throughput
+        th_ao = np.interp(wvs, th_wvs, np.prod(th_data[2:13], axis=0)) # AO throughput 
+        th_fiu = np.interp(wvs, th_wvs, np.prod(th_data[14:29], axis=0)) # KPIC throughput
+        #th_fcd = np.interp(wvs, th_wvs, th_data[30]) # Fiber Dynamic Coupling (need function to scale with Strehl/NGS, currently unused)
+        th_fiber = np.interp(wvs, th_wvs, np.prod(th_data[31:38], axis=0)) # Fiber throughput (excluding fcd above)
+        th_spec = np.interp(wvs, th_wvs, np.prod(th_data[39:51], axis=0)) # HISPEC - SPEC throughput
 
         SR = self.compute_SR(wvs)
 
         th_inst = th_ao * th_fiu * th_fiber * th_spec * SR
+
         return th_inst
     
     def get_inst_emissivity(self,wvs):
@@ -552,9 +559,12 @@ class hispec(Instrument):
         self.get_inst_throughput includes everything, whereas this is just the spectrograph. 
         '''
 
-        th_spec = {"CFHT-Y":0.5,"TwoMASS-J":0.5,"TwoMASS-H":0.5,"TwoMASS-K":0.5}.get(self.current_filter,0.5)
+        # By wavelength from throughput budget file
+        th_data = self.th_data
+        th_wvs = th_data[0] * u.micron
+        th_spec = np.interp(wvs, th_wvs, np.prod(th_data[39:51], axis=0))
 
-        return th_spec*np.ones(np.shape(wvs))
+        return th_spec
 
     def get_instrument_background(self,wvs,solidangle):
         '''
@@ -619,6 +629,17 @@ class hispec(Instrument):
         #Compute the ratio
         # import pdb; pdb.set_trace()
         SR = np.array(np.exp(-(2*np.pi*ao_wfe.to(u.micron)/wave)**2))
+
+        if self.mode == 'photonic_lantern':
+            # Include the photonic lantern gain
+            SR_PL_in = np.array([99.99, 92.7, 73.3, 32.3, 19.5, 10.6])/100.0 # From Jovanovic et al. 2017
+            SR_PL_out = np.array([0.5508, 0.5322, 0.5001, 0.4175, 0.3831, 0.3360])/0.96**2 /0.5508 * 0.9 # From Jovanovic et al. 2017
+            SR_boost = SR_PL_out/SR_PL_in # From Jovanovic et al. 2017
+            p = np.polyfit(SR_PL_in[::-1],SR_boost[::-1],4)
+
+            if self.n_ch != None:
+                SR = SR * np.polyval(p,SR)
+
         return SR
 
     def get_speckle_noise(self,separations,ao_mag,filter,wvs,star_spt,telescope,ao_mag2=None):

@@ -190,6 +190,10 @@ class Keck(Telescope):
 
         self.path = path #A path to background, transmission and AO files
 
+        # Throughput data
+        self.th_data = np.genfromtxt(path+'/throughput/keck_throughput_budget.csv',skip_header=1,usecols=np.arange(5,166),delimiter=',',missing_values='')
+
+
     def get_sky_background(self, wvs, R=1e5):
         '''
         A function that returns the sky background for a given set of wavelengths. 
@@ -260,8 +264,7 @@ class Keck(Telescope):
         '''
 
         # By wavelength from throughput budget file
-        path = self.path
-        th_data = np.genfromtxt(path+'/throughput/Throughput budget.csv',skip_header=1,usecols=np.arange(5,166),delimiter=',',missing_values='')
+        th_data = self.th_data
         th_wvs = th_data[0] * u.micron
         throughput = np.interp(wvs, th_wvs, np.prod(th_data[4:7], axis=0)) # telescope throughput rows
 
