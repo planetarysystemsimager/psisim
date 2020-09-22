@@ -16,6 +16,135 @@ try:
 except ImportError:
     pass
 
+class Spectrum():
+    '''
+    A class for spectra manipulation
+
+    The main properties will be: 
+    wvs    - sampled wavelengths (np.array of floats, in microns)
+    spectrum    - current flux values of the spectrum (np.array of floats, [photons/s/cm^2/A])
+    R   - spectral resolution (float)
+
+    The main functions will be: 
+    downsample_spectrum    - downsample a spectrum from one resolving power to another
+    scale_spectrum_to_vegamag    - scale a spectrum to have a given stellar J-magnitude
+    scale_spectrum_to_ABmag     - scale a spectrum to have a given stellar J-magnitude
+    apply_doppler_shift    - a function to apply a doppler shift to spectrum
+    rotationally_broaden    - a function to rotationally broaden a spectrum
+
+
+    '''
+
+    def __init__(self, wvs, spectrum, R):
+
+        self.wvs = wvs
+        self.spectrum = spectrum
+        self.R = R
+
+        return
+
+    def downsample_spectrum(self,R_out):
+        '''
+        Downsample a spectrum from one resolving power to another
+
+        Inputs: 
+        R_out	 - The desired resolving power of the output spectrum
+
+        Outputs:
+        new_spectrum - The original spectrum, but now downsampled
+        '''
+        fwhm = self.R/R_out
+        sigma = fwhm/(2*np.sqrt(2*np.log(2)))
+        if isinstance(sigma,float):
+            new_spectrum = ndi.gaussian_filter(self.spectrum, sigma)
+        else:
+            new_spectrum = ndi.gaussian_filter(self.spectrum, sigma.value)
+
+        self.spectrum = new_spectrum
+        self.R = R_out
+
+        return new_spectrum
+
+    def scale_spectrum_to_vegamag(self,obj_mag,obj_filt,filters):
+
+        '''
+        Based on etc.scale_host_to_ABmag
+
+        Scale a spectrum to have a given stellar J-magnitude
+
+        Args: 
+        wvs     -   An array of wavelenghts, corresponding to the spectrum. [float array]
+        spectrum -  An array of spectrum, in units photons/s/cm^2/A, assumed to have a magnitude of ___ 
+        obj_mag   -  The magnitude that we're scaling to in vega mag (immediately converted to AB)
+        '''
+        
+        #conversion from Vega mag input to AB mag
+        obj_mag = convert_vegamag_to_ABmag(obj_filt,obj_mag)
+
+        obj_spec = self.scale_spectrum_to_ABmag(obj_mag,obj_filt,filters)
+        
+        return obj_spec
+
+    def scale_spectrum_to_ABmag(self,obj_mag,obj_filt,filters):
+
+        '''
+        Based on etc.scale_host_to_ABmag
+
+        Scale a spectrum to have a given stellar J-magnitude
+
+        Args: 
+        wvs     -   An array of wavelenghts, corresponding to the spectrum. [float array]
+        spectrum -  An array of spectrum, in units photons/s/cm^2/A, assumed to have a magnitude of ___ 
+        obj_mag   - The magnitude that we're scaling to in AB mag
+        '''
+
+        import speclite.filters
+
+        this_filter = speclite.filters.load_filters(obj_filt)
+        # import pdb; pdb.set_trace() 
+
+        obj_model_mag = this_filter.get_ab_magnitudes(self.spectrum.to(u.erg/u.m**2/u.s/u.Angstrom,equivalencies=u.spectral_density(self.wvs)), self.wvs.to(u.Angstrom))[obj_filt]
+        self.spectrum = self.spectrum * 10**(-0.4*(obj_mag-obj_model_mag))
+
+        return self.spectrum
+       
+
+    def apply_doppler_shift(self,delta_wv,rv_shift):
+        '''
+        A function to apply a doppler shift to a given spectrum
+
+        Inputs: 
+        delta_wv    - the spectral resolution of a pixel
+        rv_shift    - the rv shift to apply
+        '''
+
+        #The average resolution of the spetrograph across the current band
+        # delta_lb = instrument.get_wavelength_range()[1]/instrument.current_R
+
+        #The resolution in velocity space
+        dvelocity = delta_wv*consts.c/self.wvs
+
+        #The radial velocity of the host in resolution elements. We'll shift the spectrum by the mean shift. 
+        rv_shift_resel = np.mean(rv_shift / dvelocity) * 1000*u.m/u.km
+
+        # import pdb; pdb.set_trace()
+        spec_shifted = shift(self.spectrum.value,rv_shift_resel.value)*self.spectrum.unit
+        self.spectrum = spec_shifted
+
+        
+        return spec_shifted
+
+    def rotationally_broaden(self,ld,vsini):
+        '''
+        A function to rotationally broaden a spectrum
+        '''
+        from PyAstronomy import pyasl
+        # import pdb;pdb.set_trace()
+        spec_broadened = pyasl.fastRotBroad(self.wvs.to(u.AA).value,self.spectrum.value,ld,vsini.to(u.km/u.s).value)*self.spectrum.unit
+        self.spectrum = spec_broadened
+
+        return spec_broadened
+
 psisim_path = os.path.dirname(psisim.__file__)
 
 bex_labels = ['Age', 'Mass', 'Radius', 'Luminosity', 'Teff', 'Logg', 'NACOJ', 'NACOH', 'NACOKs', 'NACOLp', 'NACOMp', 'CousinsR', 'CousinsI', 'WISE1', 'WISE2', 'WISE3', 'WISE4', 
@@ -26,15 +155,14 @@ bex_cloudy_mh0 = {}
 bex_clear_mh0 = {}
 
 
-# try: 
+#try: 
 #     import picaso
 #     from picaso import justdoit as jdi
 #     opacity_folder = os.path.join(os.path.dirname(picaso.__file__), '..', 'reference', 'opacities')
 #     dbname = "opacity_LR.db"
 #     opacity = jdi.opannection(os.path.join(opacity_folder, dbname))
-# except ImportError:
+#except ImportError:
 #     pass
-
 
 def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True, planet_mh=1, stellar_mh=0.0122, planet_teq=None, verbose=False):
     '''
@@ -128,11 +256,14 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         highres_fp_reflected =  model_alb * (planet_table_entry['PlanetRadius']*u.earthRad.to(u.au)/planet_table_entry['SMA'])**2 # flux ratio relative to host star
         highres_fp = highres_fp_reflected + fp_thermal
 
-        lowres_fp = downsample_spectrum(highres_fp, np.mean(model_R), R)
+        spec = Spectrum(wvs, highres_fp, np.mean(model_R))
+
+        lowres_fp = spec.downsample_spectrum(R)
 
         argsort = np.argsort(model_wvs)
 
         fp = np.interp(wvs, model_wvs[argsort], lowres_fp[argsort])
+        spec.spectrum = fp
 
         return fp
 
@@ -169,13 +300,18 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         planet_polarization_fraction = interp_peak_pol*rayleigh_curve
         highres_planet_polarized_intensity = highres_fp*planet_polarization_fraction
 
-        lowres_fp = downsample_spectrum(highres_fp, np.mean(model_R), R)
-        lowres_pol = downsample_spectrum(highres_planet_polarized_intensity, np.mean(model_R), R)
+        spec = Spectrum(wvs, highres_fp, np.mean(model_R))
+        spec_pol = Spectrum(wvs, highres_planet_polarized_intensity, np.mean(model_R))
+
+        lowres_fp = spec.downsample_spectrum(R)
+        lowres_pol = spec_pol.downsample_spectrum(R)
 
         argsort = np.argsort(model_wvs)
 
         fp = np.interp(wvs, model_wvs[argsort], lowres_fp[argsort])
         pol = np.interp(wvs, model_wvs[argsort], lowres_pol[argsort])
+        spec.spectrum = fp
+        spec_pol.spectrum = pol
 
         return fp,pol
 
@@ -262,28 +398,9 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
 
         return thermal_flux_ratio + reflected_flux_ratio
 
-def downsample_spectrum(spectrum,R_in, R_out):
-    '''
-    Downsample a spectrum from one resolving power to another
-
-    Inputs: 
-    spectrum - F_lambda that has a resolving power of R_in
-    R_in 	 - The resolving power of the input spectrum
-    R_out	 - The desired resolving power of the output spectrum
-
-    Outputs:
-    new_spectrum - The original spectrum, but now downsampled
-    '''
-    fwhm = R_in/R_out
-    sigma = fwhm/(2*np.sqrt(2*np.log(2)))
-    if isinstance(sigma,float):
-        new_spectrum = ndi.gaussian_filter(spectrum, sigma)
-    else:
-        new_spectrum = ndi.gaussian_filter(spectrum, sigma.value)
-
-    return new_spectrum
-
-def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbose=False,user_params = None,doppler_shift=False,broaden=False,delta_wv=None):
+def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbose=False,
+                        user_params = None,
+                        doppler_shift=False,broaden=False,delta_wv=None):
     ''' 
     A function that returns the stellar spectrum for a given spectral type
 
@@ -319,12 +436,15 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         if isinstance(wvs,float):
             wvs = [wvs]
 
+        # Initialize Spectrum class
+        spec = Spectrum(wvs, full_stellar_spectrum, R) # This R is not correct until downsample spectrum is applied
+
         #Now get the spectrum!
         for wv in wvs: 
             #Wavelength sampling of the pickles models is at 5 angstrom
-            R_in = wv/0.0005
+            spec.R = wv/0.0005
             #Down-sample the spectrum to the desired wavelength
-            ds = downsample_spectrum(full_stellar_spectrum,R_in,R)
+            ds = spec.downsample_spectrum(R)
             #Interpolate the spectrum to the wavelength we want
             stellar_spectrum.append(si.interp1d(sp.wave,ds)(wv))
         stellar_spectrum = np.array(stellar_spectrum)
@@ -360,6 +480,9 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         if isinstance(wvs,float):
             wvs = [wvs]
 
+        # Initialize Spectrum class
+        spec = Spectrum(wvs, sp_norm.flux, R) # This R is not correct until downsample spectrum is applied
+
         #Now get the spectrum!
         for wv in wvs: 
             
@@ -370,9 +493,9 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
             ind = np.argsort(np.abs((sp_norm.wave*u.micron-wv)))[0]
             dwv = dwvs[ind]
 
-            R_in = wv/dwv
+            spec.R = wv/dwv
             #Down-sample the spectrum to the desired wavelength
-            ds = downsample_spectrum(sp_norm.flux, R_in, R)
+            ds = spec.downsample_spectrum(R)
             #Interpolate the spectrum to the wavelength we want
             stellar_spectrum.append(si.interp1d(sp_norm.wave,ds)(wv))
         
@@ -403,7 +526,10 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         #Read in the model spectrum        
         wave_u,spec_u = get_phoenix_spectrum(planet_table_entry['StarLogg'],planet_table_entry['StarTeff'],star_z,star_alpha,path=path)
 
-        spec_u = scale_spectrum_to_vegamag(wave_u,spec_u,star_mag,star_filter,filters)
+        # Initialize Spectrum class
+        spec = Spectrum(wave_u,spec_u,R) # This R is not correct until downsample spectrum is applied
+
+        spec_u = spec.scale_spectrum_to_vegamag(star_mag,star_filter,filters)
         new_ABmag = get_obj_ABmag(wave_u,spec_u,instrument_filter,filters)
 
         #This loop may be very slow for a hi-res spectrum....
@@ -414,9 +540,10 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         dwvs[0] = dwvs[1]
 
         mean_R_in = np.mean(wave_u/dwvs)
+        spec.R = mean_R_in
 
         if R < mean_R_in:
-            ds = downsample_spectrum(spec_u,mean_R_in,R)
+            ds = spec.downsample_spectrum(R)
         else:
             if verbose:
                 print("Your requested Resolving power is greater than or equal to the native model. We're not upsampling here, but we should.")
@@ -452,11 +579,13 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         #     # stellar_spectrum.append(si.interp1d(wave_u,ds)(wv))
 
         stellar_spectrum *= spec_u.unit
+        spec.spectrum = stellar_spectrum
+        spec.wvs = wvs
 
         #Now scasle the spectrum so that it has the appropriate vegamagnitude
         #(with an internal AB mag)
         
-        stellar_spectrum = scale_spectrum_to_ABmag(wvs,stellar_spectrum,new_ABmag,instrument_filter,filters)
+        stellar_spectrum = spec.scale_spectrum_to_ABmag(new_ABmag,instrument_filter,filters)
 
     elif model == 'Sonora':
         
@@ -470,8 +599,11 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         star_logG = planet_table_entry['StarLogg']
         star_Teff = str(int(planet_table_entry['StarTeff']))
         wave_u,spec_u = get_sonora_spectrum(star_logG,star_Teff,path=path)
+
+        # Initialize Spectrum class
+        spec = Spectrum(wave_u,spec_u,R)  # This R is not correct until downsample spectrum is applied
         
-        spec_u = scale_spectrum_to_vegamag(wave_u,spec_u,star_mag,star_filter,filters)
+        spec_u = spec.scale_spectrum_to_vegamag(star_mag,star_filter,filters)
         new_ABmag = get_obj_ABmag(wave_u,spec_u,instrument_filter,filters)
 
         #Get the wavelength sampling of the stellar spectrum
@@ -479,9 +611,10 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         dwvs[0] = dwvs[1]
 
         mean_R_in = np.mean(wave_u/dwvs)
+        spec.R = mean_R_in
 
         if R < mean_R_in:
-            ds = downsample_spectrum(spec_u,mean_R_in,R)
+            ds = spec.downsample_spectrum(R)
         else:
             if verbose:
                 print("Your requested Resolving power is greater than or equal to the native model. We're not upsampling here, but we should.")
@@ -519,21 +652,25 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         #     # stellar_spectrum.append(si.interp1d(wave_u,ds)(wv))
 
         stellar_spectrum *= spec_u.unit
+        spec.spectrum = stellar_spectrum
+        spec.wvs = wvs
         #Now scasle the spectrum so that it has the appropriate vegamagnitude
         #(with an internal AB mag)
-        stellar_spectrum = scale_spectrum_to_ABmag(wvs,stellar_spectrum,new_ABmag,instrument_filter,filters)
+        stellar_spectrum = spec.scale_spectrum_to_ABmag(new_ABmag,instrument_filter,filters)
 
     else:
         if verbose:
             print("We only support 'pickles', 'Castelli-Kurucz', 'Phoenix' and 'Sonora' models for now")
         return -1
 
+    spec.spectrum = stellar_spectrum
+
     ## Apply a doppler shift if you'd like.
     if doppler_shift:
         if delta_wv is not None:
             if "StarRadialVelocity" in planet_table_entry.keys():
                 
-                stellar_spectrum = apply_doppler_shift(wvs,stellar_spectrum,delta_wv,planet_table_entry['StarRadialVelocity'])
+                stellar_spectrum = spec.apply_doppler_shift(delta_wv,planet_table_entry['StarRadialVelocity'])
 
             else:
                 raise KeyError("The StarRadialVelocity key is missing from your target table. It is needed for a doppler shift. ")
@@ -544,11 +681,11 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
     ## Rotationally broaden if you'd like
     if broaden:
         if ("StarVsini" in planet_table_entry.keys()) and ("StarLimbDarkening" in planet_table_entry.keys()):
-            stellar_spectrum = rotationally_broaden(wvs,stellar_spectrum,planet_table_entry['StarLimbDarkening'],planet_table_entry['StarVsini'])
+            stellar_spectrum = spec.rotationally_broaden(planet_table_entry['StarLimbDarkening'],planet_table_entry['StarVsini'])
         else:
             raise KeyError("The StarVsini key is missing from your target table. It is needed for a doppler shift. ")
 
-    return stellar_spectrum
+    return spec
 
 def get_pickles_spectrum(spt,verbose=False):
     '''
@@ -700,49 +837,6 @@ def load_bex_models():
             dat = ascii.read(filename, names=bex_labels)
             bex_dict[mass] = dat
 
-def scale_spectrum_to_vegamag(wave_u,obj_spec_interp_u,obj_mag,obj_filt,filters):
-
-    '''
-    Based on etc.scale_host_to_ABmag
-
-    Scale a spectrum to have a given stellar J-magnitude
-
-    Args: 
-    wvs     -   An array of wavelenghts, corresponding to the spectrum. [float array]
-    spectrum -  An array of spectrum, in units photons/s/cm^2/A, assumed to have a magnitude of ___ 
-    ABmag   - The magnitude that we're scaling to
-    '''
-    
-    #conversion from Vega mag input to AB mag
-    obj_mag = convert_vegamag_to_ABmag(obj_filt,obj_mag)
-
-    obj_spec = scale_spectrum_to_ABmag(wave_u,obj_spec_interp_u,obj_mag,obj_filt,filters)
-    
-    return obj_spec
-
-def scale_spectrum_to_ABmag(wave_u,obj_spec_interp_u,obj_mag,obj_filt,filters):
-
-    '''
-    Based on etc.scale_host_to_ABmag
-
-    Scale a spectrum to have a given stellar J-magnitude
-
-    Args: 
-    wvs     -   An array of wavelenghts, corresponding to the spectrum. [float array]
-    spectrum -  An array of spectrum, in units photons/s/cm^2/A, assumed to have a magnitude of ___ 
-    obj_mag   - The magnitude that we're scaling to in AB mag
-    '''
-    import speclite.filters
-    this_filter = speclite.filters.load_filters(obj_filt)
-    # import pdb; pdb.set_trace()
-    obj_model_mag = this_filter.get_ab_magnitudes(obj_spec_interp_u.to(u.erg/u.m**2/u.s/u.Angstrom,equivalencies=u.spectral_density(wave_u)), wave_u.to(u.Angstrom))[obj_filt]
-    # obj_model_mag = obj_model_mag
-    # print obj_model_mag
-    # print 10**(-0.4*(obj_mag-obj_model_mag))
-    obj_spec_interp_u = obj_spec_interp_u * 10**(-0.4*(obj_mag-obj_model_mag))
-
-    return obj_spec_interp_u
-
 def convert_vegamag_to_ABmag(filter_name,vega_mag):
     '''
     A simple conversion function to convert from vega magnitudes to AB magnitudes
@@ -846,9 +940,10 @@ def get_model_ABmags(planet_table_entry,filter_name_list, model='Phoenix',verbos
         #Read in the model spectrum        
         wave_u,spec_u = get_phoenix_spectrum(planet_table_entry['StarLogg'],planet_table_entry['StarTeff'],star_z,star_alpha,path=path)
         
+        spec = Spectrum(wave_u, spec_u, None) # R is none since it doesn't matter for the needed function
         #Now scasle the spectrum so that it has the appropriate vegamagnitude
         #(with an internal AB mag)
-        stellar_spectrum = scale_spectrum_to_vegamag(wave_u,spec_u,star_mag,star_filter,filters)
+        stellar_spectrum = spec.scale_spectrum_to_vegamag(star_mag,star_filter,filters)
 
     elif model == 'Sonora':
         
@@ -863,9 +958,10 @@ def get_model_ABmags(planet_table_entry,filter_name_list, model='Phoenix',verbos
         star_Teff = str(int(planet_table_entry['StarTeff']))
         wave_u,spec_u = get_sonora_spectrum(star_logG,star_Teff,path=path)
 
-        #Now scasle the spectrum so that it has the appropriate vegamagnitude
+        spec = Spectrum(wave_u, spec_u, None) # R is none since it doesn't matter for the needed function
+        #Now scale the spectrum so that it has the appropriate vegamagnitude
         #(with an internal AB mag)
-        stellar_spectrum = scale_spectrum_to_vegamag(wave_u,spec_u,star_mag,star_filter,filters)
+        stellar_spectrum = spec.scale_spectrum_to_vegamag(star_mag,star_filter,filters)
 
 
     mags = filters.get_ab_magnitudes(stellar_spectrum.to(u.erg/u.m**2/u.s/u.Angstrom,equivalencies=u.spectral_density(wave_u)),wave_u.to(u.Angstrom))
@@ -876,40 +972,7 @@ def get_model_ABmags(planet_table_entry,filter_name_list, model='Phoenix',verbos
 
     return mag_list
 
-def apply_doppler_shift(wavelengths,spec,delta_wv,rv_shift):
-    '''
-    A function to apply a doppler shift to a given spectrum
 
-    Inputs: 
-    wavelength  - A wavelength array or float, should have astropy units
-    spec        - the spectrum. Assumed usnigs of photons/s/cm^2/A
-    delta_wv    - the spectral resolution of a pixel
-    rv_shift the rv shift to apply
-    '''
-
-    #The average resolution of the spetrograph across the current band
-    # delta_lb = instrument.get_wavelength_range()[1]/instrument.current_R
-
-    #The resolution in velocity space
-    dvelocity = delta_wv*consts.c/wavelengths
-
-    #The radial velocity of the host in resolution elements. We'll shift the spectrum by the mean shift. 
-    rv_shift_resel = np.mean(rv_shift / dvelocity) * 1000*u.m/u.km
-
-    # import pdb; pdb.set_trace()
-    spec_shifted = shift(spec.value,rv_shift_resel.value)*spec.unit
-
-    return spec_shifted
-
-def rotationally_broaden(wavelengths,spec,ld,vsini):
-    '''
-    A function to rotationally broaden a spectrum
-    '''
-    from PyAstronomy import pyasl
-    # import pdb;pdb.set_trace()
-    spec_broadened = pyasl.fastRotBroad(wavelengths.to(u.AA).value,spec.value,ld,vsini.to(u.km/u.s).value)*spec.unit
-
-    return spec_broadened
 
 
 
