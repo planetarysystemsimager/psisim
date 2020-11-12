@@ -172,7 +172,7 @@ class TMT(Telescope):
         
         '''
 
-        throughput = {'Y':0.88,"TwoMASS-J":0.88,"TwoMASS-H":0.88,"TwoMASS-K":0.88}.get(band,0.88)
+        throughput = {"CFHT-Y":0.88,"TwoMASS-J":0.88,"TwoMASS-H":0.88,"TwoMASS-K":0.88}.get(band,0.88)
         
         return throughput*np.ones(np.shape(wvs))
         
@@ -189,6 +189,10 @@ class Keck(Telescope):
         self.water_vapor = water_vapor
 
         self.path = path #A path to background, transmission and AO files
+
+        # Throughput data
+        self.th_data = np.genfromtxt(path+'/throughput/keck_throughput_budget.csv',skip_header=1,usecols=np.arange(5,166),delimiter=',',missing_values='')
+
 
     def get_sky_background(self, wvs, R=1e5):
         '''
@@ -250,18 +254,21 @@ class Keck(Telescope):
 
     def get_telescope_throughput(self,wvs,band="TwoMass-J"):
         '''
-        Get Telescope throughput for a given observing band. 
+        Get Telescope throughput by wavelength from throughput budget.
 
-        Currently only Y,TwoMASS-J,TwoMASS-H and TwoMASS-K are supported, otherwise 0.88 is returned. 
+        Band no longer needed.
 
         Args:
             band (str): A photometric band. 
         
         '''
 
-        throughput = {'Y':0.88,"TwoMASS-J":0.88,"TwoMASS-H":0.88,"TwoMASS-K":0.88}.get(band,0.88)
-        
-        return throughput*np.ones(np.shape(wvs))
+        # By wavelength from throughput budget file
+        th_data = self.th_data
+        th_wvs = th_data[0] * u.micron
+        throughput = np.interp(wvs, th_wvs, np.prod(th_data[4:7], axis=0)) # telescope throughput rows
+
+        return throughput
     
     def get_telescope_emissivity(self,wvs,band="TwoMass-J"):
         '''
