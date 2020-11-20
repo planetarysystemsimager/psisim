@@ -55,19 +55,22 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     #Multiply by telescope throughput
     stellar_spectrum *= telescope.get_telescope_throughput(wvs,instrument)
 
-
-    ## TODO: pass in the planet separation to get_inst_throughput
-    ## TODO: make a planet and star flag for get_inst_throughput (may depend on separation)
-
-    #Multiply by instrument throughputs and quantum efficiency
-    stellar_spectrum *= instrument.get_inst_throughput(wvs)
+    #Multiply by filter transmission
     stellar_spectrum *= instrument.get_filter_transmission(wvs,instrument.current_filter)
-    stellar_spectrum *= instrument.qe #now units of e-/s/Angstrom
 
-    #Now let's put the planet spectrum back into physical units
+    # Convert planet from contrast units back into spectrum units
+      # Thus planet spectrum now has throughputs above from stellar spectrum accounted for
     #This assumes that you have properly carried around 'wvs' 
     #and that the planet_spectrum is given at the wvs wavelengths. 
     scaled_spectrum = planet_spectrum*stellar_spectrum
+
+    # Account for instrument throughput for stellar spectrum and planet spectrum individually
+    stellar_spectrum *= instrument.get_inst_throughput(wvs,planet_flag=False)
+    scaled_spectrum  *= instrument.get_inst_throughput(wvs,planet_flag=True,planet_sep=separation)
+    
+    #Multiply by quantum efficiency
+    stellar_spectrum *= instrument.qe #now units of e-/s/Angstrom
+    scaled_spectrum *= instrument.qe #now units of e-/s/Angstrom
 
     #Get Sky thermal background in photons/s/Angstrom
     thermal_sky = telescope.get_sky_background(wvs,R=instrument.current_R) #Assumes diffraction limited PSF had to multiply by solid angle of PSF.
@@ -226,16 +229,23 @@ def simulate_observation_nosky(telescope,instrument,planet_table_entry,planet_sp
     #Multiply by telescope throughput
     stellar_spectrum *= telescope.get_telescope_throughput(wvs,instrument)
 
-    #Multiply by instrument throughputs and quantum efficiency
-    stellar_spectrum *= instrument.get_inst_throughput(wvs)
+     #Multiply by filter transmission
     stellar_spectrum *= instrument.get_filter_transmission(wvs,instrument.current_filter)
-    stellar_spectrum *= instrument.qe #now units of e-/s/Angstrom
 
-    #Now let's put the planet spectrum back into physical units
+    # Convert planet from contrast units back into spectrum units
+      # Thus planet spectrum now has throughputs above from stellar spectrum accounted for
     #This assumes that you have properly carried around 'wvs' 
     #and that the planet_spectrum is given at the wvs wavelengths. 
     scaled_spectrum = planet_spectrum*stellar_spectrum
 
+    # Account for instrument throughput for stellar spectrum and planet spectrum individually
+    stellar_spectrum *= instrument.get_inst_throughput(wvs,planet_flag=False)
+    scaled_spectrum  *= instrument.get_inst_throughput(wvs,planet_flag=True,planet_sep=separation)
+    
+    #Multiply by quantum efficiency
+    stellar_spectrum *= instrument.qe #now units of e-/s/Angstrom
+    scaled_spectrum *= instrument.qe #now units of e-/s/Angstrom
+    
     #Get Sky thermal background in photons/s/Angstrom
     thermal_sky = telescope.get_sky_background(wvs) #Assumes diffraction limited PSF had to multiply by solid angle of PSF.
     thermal_sky *= telescope.collecting_area.to(u.cm**2) #Multiply by collecting area - units of photons/s/Angstom
