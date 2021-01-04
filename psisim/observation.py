@@ -6,10 +6,11 @@ import astropy.units as u
 from scipy.ndimage import gaussian_filter
 import copy
 import matplotlib.pyplot as plt
+import warnings
 
 def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum,wvs,spectrum_R,
     inject_noise=True,verbose=False,post_processing_gain = 1,return_noise_components=False,stellar_spec=None,
-    apply_lsf=False,integrate_delta_wv=False, no_speckle_noise=False,plot=False):
+    apply_lsf=False,integrate_delta_wv=False,no_speckle_noise=False,plot=False):
     '''
     A function that simulates an observation
 
@@ -22,6 +23,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
 
     Kwargs:
     stellar_spectrum - an optional argument to pass if the user has already generated a stellar spectrum. Expected units are photons/s/cm^2/angstrom
+    post_processing_gain - optional argument by which to reduce the speckle noise (set to np.inf to replace "no_speckle_noise")
     
     Outputs: 
     F_lambda, F_lambda_error
@@ -152,10 +154,13 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
         instrument.current_wvs,star_spt,detector_stellar_spectrum,detector_spectrum,detector_thermal_flux,telescope,plot=plot)
 
     if no_speckle_noise:
-        speckle_noise = speckle_noise*0.
-    else:
-        #Apply a post-processing gain
-        speckle_noise /= post_processing_gain
+        #speckle_noise = speckle_noise*0.
+        warnings.warn('no_speckle_noise is being phased out in PSISIM. Please set post_processing_gain=np.inf in the future', FutureWarning)
+        print('Setting post_processing_gain=np.inf')
+        post_processing_gain = np.inf
+
+    #Apply a post-processing gain
+    speckle_noise /= post_processing_gain
 
     ## Sum it all up
     total_noise = np.sqrt(speckle_noise**2+read_noise**2+photon_noise**2)
@@ -183,7 +188,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
 
 def simulate_observation_nosky(telescope,instrument,planet_table_entry,planet_spectrum,wvs,spectrum_R,
     inject_noise=True,verbose=False,post_processing_gain = 1,return_noise_components=False,stellar_spec=None,
-    apply_lsf=False,integrate_delta_wv=False, no_speckle_noise=False,plot=False):
+    apply_lsf=False,integrate_delta_wv=False,no_speckle_noise=False,plot=False):
     '''
     A function that simulates an observation
 
@@ -196,6 +201,7 @@ def simulate_observation_nosky(telescope,instrument,planet_table_entry,planet_sp
 
     Kwargs:
     stellar_spectrum - an optional argument to pass if the user has already generated a stellar spectrum. Expected units are photons/s/cm^2/angstrom
+    post_processing_gain - optional argument by which to reduce the speckle noise (set to np.inf to replace "no_speckle_noise")
     
     Outputs: 
     F_lambda, F_lambda_error
@@ -326,10 +332,13 @@ def simulate_observation_nosky(telescope,instrument,planet_table_entry,planet_sp
         instrument.current_wvs,star_spt,detector_stellar_spectrum,detector_spectrum,detector_thermal_flux,telescope,plot=plot)
 
     if no_speckle_noise:
-        speckle_noise = speckle_noise*0.
-    else:
-        #Apply a post-processing gain
-        speckle_noise /= post_processing_gain
+        #speckle_noise = speckle_noise*0.
+        warnings.warn('no_speckle_noise is being phased out in PSISIM. Please set post_processing_gain=np.inf in the future', FutureWarning)
+        print('Setting post_processing_gain=np.inf')
+        post_processing_gain = np.inf
+
+    #Apply a post-processing gain
+    speckle_noise /= post_processing_gain
 
     ## Sum it all up
     total_noise = np.sqrt(speckle_noise**2+read_noise**2+photon_noise**2)
