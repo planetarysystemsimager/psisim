@@ -1179,9 +1179,9 @@ class kpic_phaseII(Instrument):
 
             #Pick the WFE coefficient based on the vortex charge. Coeff values emprically determined in simulation
             if self.vortex_charge == 1:
-                wfe_coeff = 0.844
+                wfe_coeff = 0.840	# Updated on 1/11/21 based on 6/17/19 pyWFS data
             elif self.vortex_charge == 2:
-                wfe_coeff = 1.510
+                wfe_coeff = 1.650       # Updated on 1/11/21 based on 6/17/19 pyWFS data
 
             #Approximate contrast from WFE
             contrast = (wfe_coeff * ao_wfe.to(u.micron) / wvs)**(2.) # * self.vortex_charge)
