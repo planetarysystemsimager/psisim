@@ -46,7 +46,7 @@ class Instrument():
         if telescope is not None:
             self.telescope = telescope
 
-    def get_inst_throughput(self, wvs):
+    def get_inst_throughput(self, wvs, planet_flag=False, planet_sep=None):
         '''
         A function that returns the instrument throughput at a given set of wavelengths
         '''
@@ -522,9 +522,13 @@ class hispec(Instrument):
 
         return wavelengths
 
-    def get_inst_throughput(self,wvs):
+    def get_inst_throughput(self,wvs,planet_flag=False,planet_sep=None):
         '''
         Reads instrument throughput from budget file and interpolates to the given wavelengths
+        
+        Kwargs:
+        planet_flag     - Boolean denoting if planet-specific separation losses should be accounted for [default False]
+        planet_sep      - [in arcsecond] Float of angular separation at which to determine planet throughput
         '''
 
         if self.current_filter not in self.filters:
@@ -540,9 +544,16 @@ class hispec(Instrument):
         th_fiber = np.interp(wvs, th_wvs, np.prod(th_data[31:38], axis=0)) # Fiber throughput (excluding fcd above)
         th_spec = np.interp(wvs, th_wvs, np.prod(th_data[39:51], axis=0)) # HISPEC - SPEC throughput
 
+        if planet_flag:
+            # Get separation-dependent planet throughput
+            th_planet = self.get_planet_throughput(planet_sep, wvs)[0]
+        else:
+            # Set to 1 to ignore separation effects
+            th_planet = 1
+
         SR = self.compute_SR(wvs)
 
-        th_inst = th_ao * th_fiu * th_fiber * th_spec * SR
+        th_inst = th_ao * th_fiu * th_fiber * th_planet * th_spec * SR
 
         return th_inst
     
@@ -551,6 +562,7 @@ class hispec(Instrument):
         The instrument emissivity
         '''
 
+        # TODO: do we want to use the throughput w/ or w/o the planet losses?
         return (1-self.get_inst_throughput(wvs))
 
     def get_spec_throughput(self, wvs):
@@ -743,6 +755,24 @@ class hispec(Instrument):
 
         return contrast
 
+    def get_planet_throughput(self,separations,wvs):
+        '''
+        Returns the planet throughput for a given list of separations. 
+
+        Inputs: 
+        separations  - A list of separations at which to calculate the planet throughput in arcseconds [float list length n]. Assumes these are sorted. 
+        wvs          - A list of wavelengths in microns [float length m]
+
+        Outputs: 
+        get_planet_throughput - Either an array of length [n,1] if only one wavelength passed, or shape [n,m]
+        '''
+
+        ## TODO: Add in coro. effects; Currently returns 1 since no sep.-dependent modes are implemented yet
+            # See kpic_phaseII for implementation reference
+        th_planet = 1 * np.ones([np.size(separations), np.size(wvs)]) 
+        
+        return th_planet
+
 class modhis(hispec):
     '''
     An implementaion of Instrument for Modhis
@@ -778,8 +808,8 @@ class kpic_phaseII(Instrument):
         self.spatial_sampling = 3 #How many spatial pixels per wavelength channel
 
         # The main instrument properties - static
-        self.read_noise = 8 *u.electron # * u.photon#e-/pix/fr
-        self.dark_current = 0.5*u.electron/u.s * self.spatial_sampling #electrons/s/wavelength channel
+        self.read_noise = 10 *u.electron # * u.photon#e-/pix/fr
+        self.dark_current = 0.67*u.electron/u.s * self.spatial_sampling #electrons/s/wavelength channel
         self.det_welldepth = 1e5 *u.photon
         self.det_linearity = 0.66*self.det_welldepth
         self.qe = 0.95 * u.electron/u.ph
@@ -790,12 +820,14 @@ class kpic_phaseII(Instrument):
         else:
             self.telescope = telescope
 
+        self.th_data = np.genfromtxt(self.telescope.path+'/throughput/hispec_throughput_budget.csv',
+                                    skip_header=1,usecols=np.arange(5,166),delimiter=',',missing_values='')
+
         #AO parameters
         self.nactuators = 32. - 2.0 #The number of DM actuators in one direction
-        self.fiber_contrast_gain = 10. #The gain in contrast thanks to the fiber. 
+        self.fiber_contrast_gain = 10. #The gain in contrast thanks to the fiber. ('off-axis' mode only)
         self.p_law_dh = -2.0 #The some power law constant Dimitri should explain. 
-        ### DAN TODO: check ao_filter below (not in Dimitri code)
-        self.ao_filter = 'bessell-I' #Available AO filters
+        self.ao_filter = 'TwoMASS-H' #Available AO filters - per Dimitri
         self.d_ao = 0.15 * u.m
         self.area_ao = np.pi*(self.d_ao/2)**2
 
@@ -804,7 +836,7 @@ class kpic_phaseII(Instrument):
         self.name = "Keck-KPIC-PhaseII"
         
         #Acceptable filters
-        ### DAN TODO: check filters below (not clearly set for kpic in Dimitri code)
+        #TODO: check filters below (not clearly set for kpic in Dimitri code)
         self.filters = ['CFHT-Y','TwoMASS-J','TwoMASS-H','TwoMASS-K'] #Available observing filters
 
         # self.lsf_width = 1.0/2.35 #The linespread function width in pixels (assuming Gaussian for now)
@@ -831,7 +863,7 @@ class kpic_phaseII(Instrument):
         self.set_current_filter(sci_filter)
 
         if mode.lower() not in ["vfn", "off-axis", "on-axis"]:
-            raise ValueError("'mode' must be 'vfn', 'off-axis' or 'on-axis'")
+            raise ValueError("'mode' must be 'vfn', 'off-axis', or 'on-axis'")
 
         self.mode = mode.lower()    # lower() to remove errors from common VFN capitalization
 
@@ -864,11 +896,10 @@ class kpic_phaseII(Instrument):
         Return the cut on, center and cut off wavelengths in microns of the different science filters.
         '''
 
-        ### DAN TODO: check bandwidth params. Dimitri code has diff values and doesn't have Y,J,H but does have L
         filter_options = {"CFHT-Y":(0.940*u.micron,1.018*u.micron,1.090*u.micron),
                           "TwoMASS-J":(1.1*u.micron,1.248*u.micron,1.360*u.micron),
                           "TwoMASS-H":(1.480*u.micron,1.633*u.micron,1.820*u.micron),
-                          "TwoMASS-K":(1.950*u.micron,2.2*u.micron,2.4*u.micron)}
+                          "TwoMASS-K":(1.950*u.micron,2.2*u.micron,2.45*u.micron)}
 
         return filter_options.get(filter_name)
 
@@ -896,32 +927,55 @@ class kpic_phaseII(Instrument):
 
         return wavelengths
 
-    def get_inst_throughput(self,wvs):
+    def get_inst_throughput(self,wvs,planet_flag=False,planet_sep=None):
         '''
-        To be filled in
+        Reads instrument throughput from budget file and interpolates to given wavelengths
+        When reading from budget file, accounts for pertinent lines depending on the instrument mode
+
+        Kwargs:
+        planet_flag     - Boolean denoting if planet-specific separation losses should be accounted for [default False]
+        planet_sep      - [in arcsecond] Float of angular separation at which to determine planet throughput
         '''
 
         if self.current_filter not in self.filters:
             raise ValueError("Your current filter of {} is not in the available filters: {}".format(self.current_filter,self.filters))
 
-        #Will do this by band for now. 
-        ### DAN TODO: check throughputs below 
-        th_ao = {"CFHT-Y":0.60,"TwoMASS-J":0.63,"TwoMASS-H":0.66,"TwoMASS-K":0.633}.get(self.current_filter) #K-band from Nem's Feb 2020 report
-        ### Dan TODO: add losses from PIAA surface reflections to th_fiu
-        th_fiu = {"CFHT-Y":0.66,"TwoMASS-J":0.68,"TwoMASS-H":0.7,"TwoMASS-K":0.66}.get(self.current_filter) #K-band from Dimitri code (KPIC OAPS+FM+dichroic)
-        ### Dan TODO: add "fiu insertion" effects to get_speckle and get_planet functions
-        #th_fiu_insertion = 0.87 * 0.99**4 * 0.98**2 #assumes PIAA optics and AR coating on PIAA and fiber end - Not yet wavelength dependent
-        th_feu = 0.89   #from Dimitri code
-        th_fiber = {"CFHT-Y":0.99,"TwoMASS-J":0.99,"TwoMASS-H":0.99,"TwoMASS-K":0.98}.get(self.current_filter) #from Dimitri code
-        th_fib_endFace = 0.98**2 # assuming AR coating on both fiber ends - not yet wavelength dependent
+        # Use wavelength-dependent data from throughput budget file
+        th_data = self.th_data
+        th_wvs = th_data[0] * u.micron
 
-        # Dan TODO: figure out if SR is needed for VFN (thinking it's not)
+        th_ao = {"CFHT-Y":0.60,"TwoMASS-J":0.63,"TwoMASS-H":0.66,"TwoMASS-K":0.633}.get(self.current_filter) #K-band from Nem's Feb 2020 report
+        if self.mode == 'vfn':
+            # From Dimitri: th_fiu = {"CFHT-Y":0.66,"TwoMASS-J":0.68,"TwoMASS-H":0.7,"TwoMASS-K":0.6}.get(self.current_filter) #K-band from Dimitri (KPIC OAPS+FM+dichroic+PIAA(95%)+DM Window(90%)+ADC(90%))
+            th_fiu = np.interp(wvs, th_wvs, np.prod(th_data[14:19],axis=0)*np.prod(th_data[20:29],axis=0)) # KPIC throughput from budget (omitting coro.)
+            #TODO: add in vortex throughput losses (separate from apodizer losses in throughput file)
+            # From Dimitri: th_fiber = {"CFHT-Y":0.99,"TwoMASS-J":0.99,"TwoMASS-H":0.99,"TwoMASS-K":0.98}.get(self.current_filter) #from Dimitri code
+            th_fiber = np.interp(wvs, th_wvs, th_data[34]*th_data[37]) # Fiber throughput (endfaces only)
+            th_fiber = th_fiber * 0.98 # Add in constant propagation loss (0.98) for now
+
+            #TODO: Figure out how thermal effects (in Observation.py) are modulated by fiber in VFN case and implement accordingly
+            
+        else:
+            th_fiu = np.interp(wvs, th_wvs, np.prod(th_data[14:29], axis=0)) # KPIC throughput from budget
+            #th_fcd = np.interp(wvs, th_wvs, th_data[30]) # Fiber Dynamic Coupling (need function to scale with Strehl/NGS, currently unused)
+            th_fiber = np.interp(wvs, th_wvs, np.prod(th_data[31:35], axis=0)) # Fiber throughput (excluding fcd above. Also exclude prop., breakout, and second endface)
+            th_fiber = th_fiber * 0.98 *  np.interp(wvs, th_wvs, th_data[37]) # Add in const. prop. loss (0.98) and second endface
+        th_feu = 0.89   #from Dimitri code
+
+        if planet_flag:
+            # Get separation-dependent planet throughput
+            th_planet = self.get_planet_throughput(planet_sep, wvs)[0]
+        else:
+            # Set to 1 to ignore separation effects
+            th_planet = 1
+
+        #TODO: figure out if SR is needed for VFN (thinking it's not)
         SR = self.compute_SR(wvs)
         if self.mode == 'vfn':
             SR = np.ones(SR.shape)
 
         th_spec = self.get_spec_throughput(wvs)
-        th_inst = th_ao * th_fiu * th_feu * th_fiber * th_fib_endFace * th_spec * np.ones(wvs.shape) * SR
+        th_inst = th_ao * th_fiu * th_feu * th_fiber * th_planet * th_spec * SR
 
         return th_inst
     
@@ -929,7 +983,8 @@ class kpic_phaseII(Instrument):
         '''
         The instrument emissivity
         '''
-
+        
+        # TODO: do we want to use the throughput w/ or w/o the planet losses?
         return (1-self.get_inst_throughput(wvs))
 
     def get_spec_throughput(self, wvs):
@@ -937,8 +992,7 @@ class kpic_phaseII(Instrument):
         The throughput of the spectrograph - different than the throughput of the inst that you get in self.get_inst_throughput. 
         self.get_inst_throughput includes everything, whereas this is just the spectrograph. 
         '''
-        ### DAN TODO: check K-band throughputs below
-        # K-band value from Dimitri Code
+        # K-band value for NIRSPEC from Dimitri Code
         th_spec = {"CFHT-Y":0.5,"TwoMASS-J":0.5,"TwoMASS-H":0.5,"TwoMASS-K":0.2}.get(self.current_filter,0.5)
 
         return th_spec*np.ones(np.shape(wvs))
@@ -971,8 +1025,7 @@ class kpic_phaseII(Instrument):
         
         path = self.telescope.path
 
-        ### DAN TODO: check file below; I updated it to what Dimitri's code has
-            # TODO  Also check the indexes (:,4 and :,5) below which I took from Dimitri's code
+        #TODO: check file and indices below; I updated it to what Dimitri's code has for KPIC
         #Read in the ao_wfe
         ao_wfe=np.genfromtxt(path+'aowfe/hispec_modhis_ao_errorbudget_v3.csv', delimiter=',',skip_header=1)
         ao_rmag = ao_wfe[:,0]
@@ -1017,10 +1070,9 @@ class kpic_phaseII(Instrument):
 
         '''
 
-        ### Dan TODO: make sure each mode accounts for coupling efficiency (ex. 0.82 in theory w/o PIAA)
-        ### Dan TODO: decide if PIAA will be optional via flag or permanent
-        ### Dan TODO: add ADC residuals effect
-        ### Dan TODO: @Max, why feed "filter", "star_spt" if not used. Why feed "telescope" if already available from self.telescope?
+        #TODO: decide if PIAA will be optional via flag or permanent
+        #TODO: add ADC residuals effect
+        #TODO: @Max, why feed "filter", "star_spt" if not used. Why feed "telescope" if already available from self.telescope?
 
         if self.mode != 'vfn':
             print("Warning: only 'vfn' mode has been confirmed")
@@ -1033,7 +1085,7 @@ class kpic_phaseII(Instrument):
 
         if self.mode == "off-axis":
             #-- Deal with nominal KPIC mode (fiber centered on planet)
-            # Dan TODO: this was copied from HISPEC instrument. Check if any mods are needed for KPIC
+            #TODO: this was copied from HISPEC instrument. Check if any mods are needed for KPIC
 
             #Get the Strehl Ratio
             SR = self.compute_SR(wvs)
@@ -1127,9 +1179,9 @@ class kpic_phaseII(Instrument):
 
             #Pick the WFE coefficient based on the vortex charge. Coeff values emprically determined in simulation
             if self.vortex_charge == 1:
-                wfe_coeff = 0.844
+                wfe_coeff = 0.840	# Updated on 1/11/21 based on 6/17/19 pyWFS data
             elif self.vortex_charge == 2:
-                wfe_coeff = 1.510
+                wfe_coeff = 1.650       # Updated on 1/11/21 based on 6/17/19 pyWFS data
 
             #Approximate contrast from WFE
             contrast = (wfe_coeff * ao_wfe.to(u.micron) / wvs)**(2.) # * self.vortex_charge)
@@ -1149,27 +1201,20 @@ class kpic_phaseII(Instrument):
             raise ValueError("'%s' is a not a supported 'mode'" % (self.mode))
 
 
-    def get_planet_throughput(self,separations,ao_mag,filter,wvs,star_spt,telescope,ao_mag2=None):
+    def get_planet_throughput(self,separations,wvs):
         '''
         Returns the planet throughput for a given list of separations. 
 
         Inputs: 
-        separations     - A list of separations at which to calculate the planet throughput in arcseconds [float list length n]. Assumes these are sorted. 
-        ao_mag          - The magnitude in the ao band, here assumed to be I-band
+        separations  - A list of separations at which to calculate the planet throughput in arcseconds [float list length n]. Assumes these are sorted. 
         wvs          - A list of wavelengths in microns [float length m]
-        telescope    - A psisim telescope object. 
 
         Outputs: 
         get_planet_throughput - Either an array of length [n,1] if only one wavelength passed, or shape [n,m]
-
         '''
 
-        ### Dan TODO: make sure each mode accounts for coupling efficiency (ex. 0.82 in theory w/o PIAA)
-        ### Dan TODO: decide if PIAA will be optional via flag or permanent
-        ### Dan TODO: add ADC residuals effect
-        ### Dan TODO: @Max, why feed "filter", "star_spt" if not used. Why feed "telescope" if already available from self.telescope?
-            # Dan: Remove these excess terms if possible
-
+        #TODO: Implement PIAA improvement as flag for VFN mode
+        #TODO: add in ADC residual effects
         if self.mode == 'vfn':
             path = self.telescope.path
 
@@ -1181,12 +1226,13 @@ class kpic_phaseII(Instrument):
 
             th_planet = np.zeros([np.size(separations),np.size(wvs)])
             for i,sep in enumerate(separations):
-                ang_sep_resel_in = sep.value/(wvs.to(u.m)/telescope.diameter * 206265) #Convert separations from arcseconds to units of lambda/D
+                ang_sep_resel_in = sep.value/(wvs.to(u.m)/self.telescope.diameter * 206265) #Convert separations from arcseconds to units of lambda/D
                 th_planet[i,:] = np.interp(ang_sep_resel_in, th_vfn_ideal[:,0], th_vfn_ideal[:,1])
 
         elif self.mode in ['on-axis', 'off-axis']:
-            # Account for speckle injeciton efficiency into fiber
-            th_planet = 0.87 * np.ones([np.size(separations), np.size(wvs)])
+            # Account for planet-specific injection efficiency into fiber
+                # eg. if coronagraph has separation-dependent coupling, apply here
+            th_planet = 1 * np.ones([np.size(separations), np.size(wvs)]) # x1 for now since no coro.
         
         else:
             raise ValueError("'%s' is a not a supported 'mode'" % (self.mode))
