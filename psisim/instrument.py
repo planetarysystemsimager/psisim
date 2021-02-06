@@ -406,7 +406,7 @@ class hispec(Instrument):
 
         # The main instrument properties - static
         self.read_noise = 3 *u.electron # * u.photon#e-/pix/fr
-        self.dark_current = 0.02*u.electron/u.s * self.spatial_sampling #electrons/s/wavelength channel
+        self.dark_current = 0.02*u.electron/u.s #electrons/s/pix
         self.det_welldepth = 1e5 *u.photon
         self.det_linearity = 0.66*self.det_welldepth
         self.qe = 0.95 * u.electron/u.ph
@@ -809,11 +809,11 @@ class kpic_phaseII(Instrument):
 
         # The main instrument properties - static
         self.read_noise = 10 *u.electron # * u.photon#e-/pix/fr
-        self.dark_current = 0.67*u.electron/u.s * self.spatial_sampling #electrons/s/wavelength channel
+        self.dark_current = 0.67*u.electron/u.s #electrons/s/pix
         self.det_welldepth = 1e5 *u.photon
         self.det_linearity = 0.66*self.det_welldepth
         self.qe = 0.95 * u.electron/u.ph
-        self.temperature = 276*u.K
+        self.temperature = 281*u.K
 
         if telescope is None:
             self.telescope = psisim.telescope.Keck()
@@ -851,6 +851,7 @@ class kpic_phaseII(Instrument):
         self.ao_mag = None
         self.mode = None
         self.vortex_charge = None      # needed for vfn mode only
+        self.host_diameter= 0.       # needed for vfn mode only (default 0 to disable geometric leakage)
     
     def set_observing_mode(self,exposure_time,n_exposures,sci_filter,wvs,dwvs=None, mode="vfn", vortex_charge=None):
         '''
@@ -1168,24 +1169,59 @@ class kpic_phaseII(Instrument):
             return contrast
 
         elif self.mode == "vfn":
-            #-- Deal with VFN KPIC mode (using Dimitri's old method)
+            #-- Deal with VFN KPIC mode
 
+            #-- Determine WFE
             #Get the AO WFE as a function of rmag
             ao_rmag,ao_wfe_ngs,ao_wfe_lgs = self.load_scale_aowfe(telescope.seeing,telescope.airmass,
                                                 site_median_seeing=telescope.median_seeing)
 
             #We take the minimum wavefront error between natural guide star and laser guide star errors
-            ao_wfe = np.min([np.interp(self.ao_mag,ao_rmag, ao_wfe_ngs),np.interp(self.ao_mag,ao_rmag, ao_wfe_lgs)]) * u.nm
+            ao_wfe = np.min([np.interp(ao_mag,ao_rmag, ao_wfe_ngs),np.interp(ao_mag,ao_rmag, ao_wfe_lgs)]) * u.nm
 
+            #-- Get Stellar leakage due to WFE
             #Pick the WFE coefficient based on the vortex charge. Coeff values emprically determined in simulation
             if self.vortex_charge == 1:
-                wfe_coeff = 0.840	# Updated on 1/11/21 based on 6/17/19 pyWFS data
+                wfe_coeff = 0.840       # Updated on 1/11/21 based on 6/17/19 pyWFS data
             elif self.vortex_charge == 2:
                 wfe_coeff = 1.650       # Updated on 1/11/21 based on 6/17/19 pyWFS data
 
             #Approximate contrast from WFE
             contrast = (wfe_coeff * ao_wfe.to(u.micron) / wvs)**(2.) # * self.vortex_charge)
             
+            #-- Get Stellar leakage due to Tip/Tilt Jitter
+            #TODO: Use AO_mag to determine T/T residuals 
+            # For now: Assume constant 2.5mas (RMS) T/T Jitter based on current PyWFS data
+            ttarcsec = 2.5 * 1e-3 # convert to arcsec
+            # Convert to lam/D
+            ttlamD = ttarcsec / (wvs.to(u.m)/telescope.diameter * 206265)
+            
+            # Use leakage approx. from Ruane et. al 2019 
+                # https://arxiv.org/pdf/1908.09780.pdf      Eq. 3
+            ttnull = (ttlamD)**(2*self.vortex_charge)
+            
+            # Add to total contrast
+            contrast += ttnull
+                
+            #-- Get Stellar leakage due to finite sized star (Geometric leakage)
+              # Assumes user has already set host diameter with set_vfn_host_diamaeter()
+              # Equation and coefficients are from Ruante et. al 2019
+                # https://arxiv.org/pdf/1908.09780.pdf     fig 7c
+            # Convert host_diameter to units of lambda/D
+            host_diam_LoD = self.host_diameter / (wvs.to(u.m)/telescope.diameter * 206265)
+            
+            # Define Coefficients for geometric leakage equation
+            if self.vortex_charge == 1:
+                geo_coeff = 3.5
+            elif self.vortex_charge == 2:
+                geo_coeff = 4.2
+            # Compute leakage
+            geonull = (self.host_diameter / geo_coeff)**(2*self.vortex_charge)
+            
+            # Add to total contrast
+            contrast += geonull
+                
+            #-- Make sure contrast has the expected output format
             #Null is independent of the planet separation; use np.tile to replicate results at all seps
             contrast = np.tile(contrast, (np.size(separations),1))
 
@@ -1238,3 +1274,11 @@ class kpic_phaseII(Instrument):
             raise ValueError("'%s' is a not a supported 'mode'" % (self.mode))
 
         return th_planet
+    def set_vfn_host_diamaeter(self,host_size_in_mas):
+        '''
+        Sets the host_diameter instance variable in units of arcsec
+        
+        Inputs:
+        host_size_in_mas - Angular diameter of the host star in units of milliarcseconds
+        '''
+        self.host_diameter = host_size_in_mas * 1e-3 # convert to arcsec
