@@ -1204,7 +1204,7 @@ class kpic_phaseII(Instrument):
             contrast += ttnull
                 
             #-- Get Stellar leakage due to finite sized star (Geometric leakage)
-              # Assumes user has already set host diameter with set_vfn_host_diamaeter()
+              # Assumes user has already set host diameter with set_vfn_host_diameter()
               # Equation and coefficients are from Ruante et. al 2019
                 # https://arxiv.org/pdf/1908.09780.pdf     fig 7c
             # Convert host_diameter to units of lambda/D
@@ -1274,7 +1274,7 @@ class kpic_phaseII(Instrument):
             raise ValueError("'%s' is a not a supported 'mode'" % (self.mode))
 
         return th_planet
-    def set_vfn_host_diamaeter(self,host_size_in_mas):
+    def set_vfn_host_diameter(self,host_size_in_mas):
         '''
         Sets the host_diameter instance variable in units of arcsec
         
