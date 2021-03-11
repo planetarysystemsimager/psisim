@@ -117,12 +117,16 @@ class ExoArchive_Universe(Universe):
         self.filename = table_filename
         self.planets = None
 
-    def Load_ExoArchive_Universe(self):
+    def Load_ExoArchive_Universe(self, est_pl_radius=False):
         '''
         A function that reads the Exoplanet Archive data and takes the output to populate the planets table
         
         If the filename provided in the constructor is new, new data will be pulled from the archive
         If the filename already exists, we'll try to load that file as an astroquery QTable
+        
+        Kwargs:
+        est_pl_radius    - Boolean denoting if planet radius should be approximated using mass-radius relations [default False]
+        
         '''
 
         #-- Load/Pull data depending on provided filename
@@ -147,7 +151,7 @@ class ExoArchive_Universe(Universe):
                 # We could consider using PyVO: https://pyvo.readthedocs.io/en/latest/
             
             # Define the columns to read. NOTE: add columns here if needed
-            col2pull = "pl_angsep,pl_orbsmax,pl_orbeccen,pl_orbincl,pl_bmasse,pl_rade,ra,dec,st_dist,pl_hostname,st_spstr,st_mass,st_teff,st_bj,st_vj,st_rc,st_ic,st_j,st_h,st_k,st_rad,st_logg"
+            col2pull = "pl_angsep,pl_orbsmax,pl_orbeccen,pl_orbincl,pl_bmasse,pl_rade,pl_eqt,ra,dec,st_dist,pl_hostname,st_spstr,st_mass,st_teff,st_bj,st_vj,st_rc,st_ic,st_j,st_h,st_k,st_rad,st_logg"
             
             # Pull data. Note: pulling "confirmed planets" table. 
                 #  Could use table="compositepars" to pull "Composite Planet Data" table 
@@ -172,8 +176,13 @@ class ExoArchive_Universe(Universe):
         smas       = NArx_table['pl_orbsmax'].copy()    # au
         eccs       = np.array(NArx_table['pl_orbeccen'])# eccentricity
         incs       = NArx_table['pl_orbincl'].copy()    # deg
+        eqtemps    = np.array(NArx_table['pl_eqt'])     # K
         masses     = np.array(NArx_table['pl_bmasse'])  # earth masses (best estimate)
-        radii      = np.array(NArx_table['pl_rade'])    # earth radii
+        radii      = np.array(NArx_table['pl_rade'])    # earth radii        
+        # Compute missing radii using mass-radius relations if requested
+        if est_pl_radius:
+            radii = self.approximate_radii(masses,radii,eqtemps)
+
         grav = constants.G * (masses * u.earthMass)/(radii * u.earthRad)**2
         logg = np.log10(grav.to(u.cm/u.s**2).value)     # logg cgs
 
@@ -210,9 +219,98 @@ class ExoArchive_Universe(Universe):
         guessinds  = np.where(host_logg == 0) # Indices of logg to populate with guess
         host_logg[guessinds] = tmp_logg[guessinds]
 
-        all_data = [star_names, ras, decs, distances, flux_ratios, angseps, projaus, phase, smas, eccs, incs, masses, radii, logg, spts, host_mass, host_teff, host_radii, host_logg, host_Bmags, host_Vmags, host_Rmags, host_Imags, host_Jmags, host_Hmags, host_Kmags]
-        labels = ["StarName", "RA", "Dec", "Distance", "Flux Ratio", "AngSep", "ProjAU", "Phase", "SMA", "Ecc", "Inc", "PlanetMass", "PlanetRadius", "PlanetLogg", "StarSpT", "StarMass", "StarTeff", "StarRad", "StarLogg", "StarBMag", "StarVmag", "StarRmag", "StarImag", "StarJmag", "StarHmag", "StarKmag"]
+        all_data = [star_names, ras, decs, distances, flux_ratios, angseps, projaus, phase, smas, eccs, incs, masses, radii, logg, eqtemps, spts, host_mass, host_teff, host_radii, host_logg, host_Bmags, host_Vmags, host_Rmags, host_Imags, host_Jmags, host_Hmags, host_Kmags]
+        labels = ["StarName", "RA", "Dec", "Distance", "Flux Ratio", "AngSep", "ProjAU", "Phase", "SMA", "Ecc", "Inc", "PlanetMass", "PlanetRadius", "PlanetLogg", "PlanetTeq", "StarSpT", "StarMass", "StarTeff", "StarRad", "StarLogg", "StarBMag", "StarVmag", "StarRmag", "StarImag", "StarJmag", "StarHmag", "StarKmag"]
 
         planets_table = QTable(all_data, names=labels)
 
         self.planets = planets_table
+    
+    def approximate_radii(self,masses,radii,eqtemps):
+        '''
+        Approximate planet radii given the planet masses
+        
+        Arguments:
+        masses    - ndarray of planet masses
+        radii     - ndarray of planet radii. 0-values will be replaced with approximation.
+        eqtemps   - ndarray of planet equilibrium temperatures (needed for Thorngren constraints)
+        
+        Returns:
+        radii     - ndarray of planet radii after approximation.
+        
+        Methodology:
+        - Uses Thorngren 2019 for targets with 15M_E < M < 12M_J and T_eq < 1000 K.
+            ref.: https://ui.adsabs.harvard.edu/abs/2017ApJ...834...17C/abstract
+        - Uses Chen and Kipping 2016 for all other targets.
+            ref.: https://doi.org/10.3847/2515-5172/ab4353
+        * Only operates on 0-valued elementes in radii vector (ie. prioritizes Archive-provided radii).
+        '''
+        
+        MJUP2EARTH = 317.82838    # conversion from Jupiter to Earth masses
+        MSOL2EARTH = 332946.05    # conversion from Solar to Earth masses
+        RJUP2EARTH = 11.209       # conversion from Jupiter to Earth radii
+        
+        ##-- Find indices for missing radii so we don't replace Archive-provided values
+        rad_mask = (radii == 0.0)        
+        
+        ##-- Compute radii assuming Chen&Kipping 2016 (for hot giants)
+            # ref.: https://ui.adsabs.harvard.edu/abs/2017ApJ...834...17C/abstract
+        # Exponent terms from paper (Table 1)
+        e0  = 0.279    # Terran 
+        e1  = 0.589    # Neptunian 
+        e2  =-0.044    # Jovian 
+        e3  = 0.881    # Stellar 
+        # Object-type transition points from paper (Table 1) - Earth-mass units
+        Mc0 = 2.04              # terran-netpunian transition
+        Mc1 = 0.414*MJUP2EARTH  # neptunian-jovian transition 
+        Mc2 = 0.080*MSOL2EARTH  # jovian-stellar transition
+        # Coefficient terms
+        C0  = 1.008    # Terran - from paper (Table 1)
+        C1  = 0.808    # Neptunian - computed from intercept with terran domain
+        C2  = 17.74    # Jovian - computed from intercept neptunian domain
+        C3  = 0.00143  # Stellar - computed from intercept with jovian domain
+        
+        # Compute radii for "Terran"-like planets
+        ter_mask = (masses < Mc0) # filter for terran-mass objects
+        com_mask = rad_mask & ter_mask # planets in terran range and missing radius value
+        radii[com_mask] = C0*(masses[com_mask]**e0)
+        
+        # Compute radii for "Neptune"-like planets
+        nep_mask = (masses < Mc1) # filter for terran-mass objects
+        com_mask = rad_mask & np.logical_not(ter_mask) & nep_mask # planets in nepune range and missing radius value
+        radii[com_mask] = C1*(masses[com_mask]**e1)
+        
+        # Compute radii for "Jovian"-like planets
+        jov_mask = (masses < Mc2) # filter for terran-mass objects
+        com_mask = rad_mask & np.logical_not(nep_mask) & jov_mask # planets in jovian range and missing radius value
+        radii[com_mask] = C2*(masses[com_mask]**e2)
+        
+        # Compute radii for "stellar" objects
+        ste_mask = (masses > Mc2) # filter for terran-mass objects
+        com_mask = rad_mask & ste_mask # planets in stellar range and missing radius value
+        radii[com_mask] = C3*(masses[com_mask]**e3)
+        
+        
+        ##-- Compute radii assuming Thorngren 2019 (for cool giants)
+            # ref.: https://doi.org/10.3847/2515-5172/ab4353
+        # Coefficient terms from paper
+        C0  = 0.96
+        C1  = 0.21
+        C2  =-0.20
+        # Define Constraints
+        cool_low = 15            # [M_earth] Lower bound of applicability
+        cool_hi  = 12*MJUP2EARTH # [M_earth] Upper bound of applicability
+        cool_tmp = 1000          # [K] Temperature bound of applicability
+        # Create mask to find planets that meet the constraints
+        cool_low_mask = (masses  > cool_low)
+        cool_hi_mask  = (masses  < cool_hi)
+        cool_tmp_mask = (eqtemps < cool_tmp)
+        com_mask = rad_mask & cool_low_mask & cool_hi_mask & cool_tmp_mask
+        # Convert planet mass vector to M_jup for equation
+        logmass_com = np.log10(masses[com_mask]/MJUP2EARTH)
+        # Apply equation to said planets (including conversion back to Rad_earth)
+        radii[com_mask] = (C0 + C1*logmass_com + C2*(logmass_com**2))*RJUP2EARTH
+
+        return radii
+        
+        
