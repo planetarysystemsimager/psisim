@@ -276,17 +276,17 @@ class ExoArchive_Universe(Universe):
         radii[com_mask] = C0*(masses[com_mask]**e0)
         
         # Compute radii for "Neptune"-like planets
-        nep_mask = (masses < Mc1) # filter for terran-mass objects
-        com_mask = rad_mask & np.logical_not(ter_mask) & nep_mask # planets in nepune range and missing radius value
+        nep_mask = (masses < Mc1) # filter for neptune-mass objects
+        com_mask = rad_mask & np.logical_not(ter_mask) & nep_mask # planets in neptune range and missing radius value
         radii[com_mask] = C1*(masses[com_mask]**e1)
         
         # Compute radii for "Jovian"-like planets
-        jov_mask = (masses < Mc2) # filter for terran-mass objects
+        jov_mask = (masses < Mc2) # filter for jovian-mass objects
         com_mask = rad_mask & np.logical_not(nep_mask) & jov_mask # planets in jovian range and missing radius value
         radii[com_mask] = C2*(masses[com_mask]**e2)
         
         # Compute radii for "stellar" objects
-        ste_mask = (masses > Mc2) # filter for terran-mass objects
+        ste_mask = (masses > Mc2) # filter for stellar-mass objects
         com_mask = rad_mask & ste_mask # planets in stellar range and missing radius value
         radii[com_mask] = C3*(masses[com_mask]**e3)
         
@@ -304,7 +304,7 @@ class ExoArchive_Universe(Universe):
         # Create mask to find planets that meet the constraints
         cool_low_mask = (masses  > cool_low)
         cool_hi_mask  = (masses  < cool_hi)
-        cool_tmp_mask = (eqtemps < cool_tmp)
+        cool_tmp_mask = (eqtemps < cool_tmp) & (eqtemps != 0.0)  # omit temp=0 since those are actually empties
         com_mask = rad_mask & cool_low_mask & cool_hi_mask & cool_tmp_mask
         # Convert planet mass vector to M_jup for equation
         logmass_com = np.log10(masses[com_mask]/MJUP2EARTH)
