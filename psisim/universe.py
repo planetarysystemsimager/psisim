@@ -237,6 +237,7 @@ class ExoArchive_Universe(Universe):
 
             # Pull the data and convert to astropy masked QTable
             NArx_res = NArx_service.search(query) 
+            
             NArx_table = QTable(NArx_res.to_table())
 
             # Add a flag to the table metadata to denote what kind of table it was
@@ -244,7 +245,9 @@ class ExoArchive_Universe(Universe):
             NArx_table.meta['isPSCOMPPARS'] = composite_table
             # Save raw table for future use 
             NArx_table.write(self.filename,format='ascii.ecsv',overwrite=force_new_pull)
-
+            # Read table back in to ensure that formatting from a fresh pull matches
+              # the formatting from an old pull (as done when filename exists)
+            NArx_table = QTable.read(self.filename, format='ascii.ecsv')
             
         #-- Rename columns to psisim-expected names
         NArx_table.rename_columns(col2pull.split(','),colNewNames)
