@@ -1,7 +1,7 @@
 import numpy as np
 import astropy.units as u
 import astropy.constants as constants
-from astropy.table import QTable
+from astropy.table import QTable, MaskedColumn
 
 class Universe():
     '''
@@ -108,7 +108,7 @@ class ExoArchive_Universe(Universe):
     '''
     A child class of Universe that is adapted to create a universe from known NASA Exoplanet Archive Data
     
-    Uses the astroquery package to read in known exoplanets
+    Uses the pyVO package to read in known exoplanets
     '''
 
     def __init__(self,table_filename):
@@ -149,122 +149,191 @@ class ExoArchive_Universe(Universe):
         self._ThMhi  = 12*self.MJUP2EARTH # [M_earth] Upper bound of applicability
         self._ThThi  = 1000          # [K] Temperature bound of applicability
         
-    def Load_ExoArchive_Universe(self, est_pl_radius=False, est_pl_mass=False):
+    def Load_ExoArchive_Universe(self, composite_table=True, force_new_pull=False, fill_empties=True):
         '''
-        A function that reads the Exoplanet Archive data and takes the output to populate the planets table
+        A function that reads the Exoplanet Archive data to populate the planet table
         
-        If the filename provided in the constructor is new, new data will be pulled from the archive
-        If the filename already exists, we'll try to load that file as an astroquery QTable
+        Unless force_new_pull=True:
+        If the filename provided in constructor is new, new data is pulled from the archive
+        If the filename already exists, we try to load that file as an astroquery QTable
         
         Kwargs:
-        est_pl_radius    - Boolean denoting if planet radius should be approximated using mass-radius relations [default False]
-        est_pl_mass      - Boolean denoting if planet mass should be approximated using mass-radius relations [default False]
+        composite_table  - Bool. True [default]: pull "Planetary Systems Composite
+                           Parameters Table". False: pull simple "Planetary Systems" Table
+                           NOTE: see Archive website for difference between these tables
+                           
+        force_new_pull   - Bool. False [default]: loads table from filename if filename
+                           file exists. True: pull new archive data and overwrite filename
+                           
+        fill_empties     - Bool. True [default]: approximate empty table values using
+                           other values present in data. Ex: radius, mass, logg, angsep, etc.
+                           NOTE: When composite_table=True we do not approximate the planet 
+                             radius or mass; we keep the archive-computed approx.
+                           
         
-        *** Note: the resulting planet table will have 0's where data is missing/unknown. 
-            Eg. when a planet is missing a radius measurement, the 'PlanetRadius' column for that planet will == 0.        
+        Approximation methods:
+        - AngSep     - theta[mas] = SMA[au]/distance[pc] * 1e3
+        - logg       - logg [log(cgs)] = log10(G*mass/radius**2)
+        - StarLum    - absVmag = Vmag - 5*log10(distance[pc]/10)
+                       starlum[L/Lsun] = 10**-(absVmag-4.83)/2.5
+        - StarRad    - rad[Rsun] = (5800/Teff[K])**2 *sqrt(starlum)
+        - PlanetRad  - ** when composite_table=True, keep archive-computed approx
+                       Based on Thorngren 2019 and Chen&Kipping 2016
+        - PlanetMass - ^^ Inverse of PlanetRad
+        
+        
+        *** Note: the resulting planet table will have nan's where data is missing/unknown. 
+            Ex. if a planet lacks a radius val, the 'PlanetRadius' for will be np.nan        
         '''
+
+        #-- Define columns to read. NOTE: add columns here if needed. 
+          # col2pull entries should be matched with colNewNames entries
+        col2pull =  "pl_name,hostname,pl_orbsmax,pl_orbeccen,pl_orbincl,pl_bmasse,pl_rade," + \
+                    "pl_eqt,ra,dec,sy_dist,st_spectype,st_mass,st_teff," + \
+                    "st_rad,st_logg,st_lum,st_age,st_vsin,st_radv," + \
+                    "st_met,sy_plx,sy_bmag,sy_vmag,sy_rmag,sy_icmag," + \
+                    "sy_jmag,sy_hmag,sy_kmag,discoverymethod"
+        colNewNames = ["PlanetName","StarName","SMA","Ecc","Inc","PlanetMass","PlanetRadius",
+                       "PlanetTeq","RA","Dec","Distance","StarSpT","StarMass","StarTeff",
+                       "StarRad","StarLogg","StarLum","StarAge","StarVsini","StarRadialVelocity",
+                       "StarZ","StarParallax","StarBMag","StarVmag","StarRmag","StarImag",
+                       "StarJmag","StarHmag","StarKmag","DiscoveryMethod"]
 
         #-- Load/Pull data depending on provided filename
         import os
-        
-        if os.path.isfile(self.filename):
-            print("%s already exists:\n    we'll attempt to read this file as an astroquery table"%self.filename)
-            
+        if os.path.isfile(self.filename) and not force_new_pull:
+            print("%s already exists:\n    we'll attempt to read this file as an astropy QTable"%self.filename)
+
             NArx_table = QTable.read(self.filename, format='ascii.ecsv')
             
-            # When reading table from a file, ra and dec are hidden in sky_coord; extract
-            NArx_table['ra']  = NArx_table['sky_coord'].ra
-            NArx_table['dec'] = NArx_table['sky_coord'].dec
-            
+            # Check that the provided table file matches the requested table type
+            if NArx_table.meta['isPSCOMPPARS'] != composite_table:
+                err0 = '%s contained the wrong table-type:'%self.filename
+                err1 = 'pscomppars' if composite_table else 'ps'
+                err2 = 'pscomppars' if NArx_table.meta['isPSCOMPPARS'] else 'ps'
+                err3 = " Expected '{}' table but found '{}' table.".format(err1,err2)
+                err4 = ' Consider setting force_new_pull=True.'
+                raise ValueError(err0+err3+err4)
+
         else:
-            print("%s does not exist:\n    we'll pull new data from the archive and save it to this filename"%self.filename)
-            
-            # Import astroquery package used to read table using Exoplanet Archive API
-            from astroquery.nasa_exoplanet_archive import NasaExoplanetArchive as NArx
-            # TODO: switch to TAP service; Archive saves the API will be deprecated soon:
-                # https://exoplanetarchive.ipac.caltech.edu/docs/TAP/usingTAP.html
-                # We could consider using PyVO: https://pyvo.readthedocs.io/en/latest/
-            
-            # Define the columns to read. NOTE: add columns here if needed
-            col2pull = "pl_angsep,pl_orbsmax,pl_orbeccen,pl_orbincl,pl_bmasse,pl_rade,pl_eqt,ra,dec,st_dist,pl_hostname,st_spstr,st_mass,st_teff,st_bj,st_vj,st_rc,st_ic,st_j,st_h,st_k,st_rad,st_logg"
-            
-            # Pull data. Note: pulling "confirmed planets" table. 
-                #  Could use table="compositepars" to pull "Composite Planet Data" table 
-                # that'll have more entries but this table could be self INconsistent.
-            NArx_table = NArx.query_criteria(table="exoplanets",select=col2pull)
-            
-            # Save raw table for future use (use ascii.ecsv so Quantity objects are saved)
-            NArx_table.write(self.filename,format='ascii.ecsv')
+            if not force_new_pull:
+                print("%s does not exist:\n    we'll pull new data from the archive and save it to this filename"%self.filename)
+            else:
+                print("%s may or may not exist:\n    force_new_pull=True so we'll pull new data regardless and overwrite as needed"%self.filename) 
+
+            # Import pyVO package used to query the Exoplanet Archive
+            import pyvo as vo
+
+            # Create a "service" which can be used to access the archive TAP server
+            NArx_service = vo.dal.TAPService("https://exoplanetarchive.ipac.caltech.edu/TAP")
+
+            # Create a "query" string formatted per the TAP specifications
+              # 'select': specify which columns to pull
+              # 'from': specify which table to pull 
+              # 'where': (optional) specify parameters to be met when choosing what to pull
+                # Add where flag for ps to only pull the best row for each planet
+            tab2pull = "pscomppars" if composite_table else "ps where default_flag=1"
+            query = "select "+col2pull+" from "+tab2pull
+
+            # Pull the data and convert to astropy masked QTable
+            NArx_res = NArx_service.search(query) 
+            NArx_table = QTable(NArx_res.to_table())
+
+            # Add a flag to the table metadata to denote what kind of table it was
+              # This'll prevent trying to read the table as the wrong type later
+            NArx_table.meta['isPSCOMPPARS'] = composite_table
+            # Save raw table for future use 
+            NArx_table.write(self.filename,format='ascii.ecsv',overwrite=force_new_pull)
 
             
-        #-- Compute/Populate pertinent entries into planet table
+        #-- Rename columns to psisim-expected names
+        NArx_table.rename_columns(col2pull.split(','),colNewNames)
         
-        # TODO: the following are not easily available in table; need approx for these
-            # For now, set them to nan
-        flux_ratios= np.zeros(len(NArx_table))#; flux_ratios[:] = np.nan
-        projaus    = np.zeros(len(NArx_table))#; projaus[:] = np.nan
-        phase      = np.zeros(len(NArx_table))#; phase[:] = np.nan
+        #-- Change fill value from default 1e20 to np.nan
+        for col in NArx_table.colnames:
+            if isinstance(NArx_table[col].fill_value,(int,float)):
+                # Only change numeric fill values to nan
+                NArx_table[col].fill_value = np.nan
         
-        # Note: we use np.array() call in variable def's below to avoid pass-by-ref
-
-        angseps    = NArx_table['pl_angsep'].copy()     # mas
-        smas       = NArx_table['pl_orbsmax'].copy()    # au
-        eccs       = np.array(NArx_table['pl_orbeccen'])# eccentricity
-        incs       = NArx_table['pl_orbincl'].copy()    # deg
-        eqtemps    = np.array(NArx_table['pl_eqt'])     # K
-        masses     = np.array(NArx_table['pl_bmasse'])  # earth masses (best estimate)
-        radii      = np.array(NArx_table['pl_rade'])    # earth radii        
-        # Compute missing radii using mass-radius relations if requested
-        if est_pl_radius:
-            radii = self.approximate_radii(masses,radii,eqtemps)
-        # Compute missing masses using mass-radius relations if requested
-        if est_pl_mass:
-            masses = self.approximate_masses(masses,radii,eqtemps)
-
-        # Compute logg (being wary of 0 values in mass or radii)
-        mask_0 = (masses != 0) & (radii != 0)
-        grav = constants.G * (masses[mask_0] * u.earthMass)/(radii[mask_0] * u.earthRad)**2
-        logg = np.zeros(len(NArx_table))
-        logg[mask_0] = np.log10(grav.to(u.cm/u.s**2).value)     # logg cgs
-
-        # stellar properties
-        ras        = np.array(NArx_table['ra'])         # deg
-        decs       = np.array(NArx_table['dec'])        # deg 
-        distances  = np.array(NArx_table['st_dist'])    # pc
-        star_names = np.array(NArx_table['pl_hostname'])
-        spts       = NArx_table['st_spstr'].copy() # NOTE: string format might not be 
+        #-- Add new columns for values not easily available or computable from table
+          # TODO: for now, these are masked but we should find a good way to populate them
+        NArx_table.add_columns([MaskedColumn(length=len(NArx_table),mask=True,fill_value=np.nan)]*3,
+                               names=['Flux Ratio','ProjAU','Phase'])
         
-        host_mass  = np.array(NArx_table['st_mass'])    # solar masses
-        host_teff  = np.array(NArx_table['st_teff'])    # K
-        # stellar photometry
-        host_Bmags = np.array(NArx_table['st_bj'])      # Johnson
-        host_Vmags = np.array(NArx_table['st_vj'])      # Johnson
-        host_Rmags = np.array(NArx_table['st_rc'])      # Cousins
-        host_Imags = np.array(NArx_table['st_ic'])      # Cousins
-        host_Jmags = np.array(NArx_table['st_j'])       # 2MASS
-        host_Hmags = np.array(NArx_table['st_h'])       # 2MASS
-        host_Kmags = np.array(NArx_table['st_k'])       # 2MASS
+        if fill_empties:
+            #-- Compute missing planet columns
+            # Compute missing masses and radii using mass-radius relations
+            if not composite_table:
+                # NOTE: composite table already has radius-mass approximation so we'll
+                  # only repeat them if we don't pull that table
+                    
+                # Convert masked columns to ndarrays with 0's instead of mask
+                  # as needed by the approximate_... functions
+                masses   = np.array(NArx_table['PlanetMass'].filled(fill_value=0.0))
+                radii    = np.array(NArx_table['PlanetRadius'].filled(fill_value=0.0))
+                eqtemps  = np.array(NArx_table['PlanetTeq'].filled(fill_value=0.0))
+                # Perform approximations
+                radii = self.approximate_radii(masses,radii,eqtemps)
+                masses = self.approximate_masses(masses,radii,eqtemps)
+                # Create masks for non-zero values (0's are values where data was missing)
+                rad_mask = (radii != 0.)
+                mss_mask = (masses != 0.)
+                # Create mask to only missing values in NArx_table with valid values
+                rad_mask = NArx_table['PlanetRadius'].mask & rad_mask
+                mss_mask = NArx_table['PlanetMass'].mask & mss_mask
+                # Place results back in the table
+                NArx_table['PlanetRadius'][rad_mask] = radii[rad_mask]
+                NArx_table['PlanetMass'][mss_mask] = masses[mss_mask]
         
-        host_radii = np.array(NArx_table['st_rad'])     # Rsun
-        host_logg  = np.array(NArx_table['st_logg'])    # logg cgs
+            # Angular separation
+            NArx_table['AngSep'] = NArx_table['SMA']/NArx_table['Distance'] * 1e3
+            # Planet logg
+            grav = constants.G * (NArx_table['PlanetMass'].filled()*u.earthMass) / (NArx_table['PlanetRadius'].filled()*u.earthRad)**2
+            NArx_table['PlanetLogg'] = np.ma.log10(MaskedColumn(np.ma.masked_invalid(grav.cgs.value),fill_value=np.nan))  # logg cgs
+
+            #-- Guess star luminosity, radius, and gravity for missing (masked) values only
+              # The guesses will be questionably reliabile
+            # Star Luminosity
+            host_MVs = NArx_table['StarVmag'] - 5*np.ma.log10(NArx_table['Distance']/10)  # absolute v mag
+            host_lum = -(host_MVs-4.83)/2.5    #log10(L/Lsun)
+            NArx_table['StarLum'][NArx_table['StarLum'].mask] = host_lum[NArx_table['StarLum'].mask]
+
+            # Star radius
+            host_rad = (5800/NArx_table['StarTeff'])**2 *np.ma.sqrt(10**NArx_table['StarLum'])   # Rsun
+            NArx_table['StarRad'][NArx_table['StarRad'].mask] = host_rad[NArx_table['StarRad'].mask]
+
+            # Star logg
+            host_grav = constants.G * (NArx_table['StarMass'].filled()*u.solMass) / (NArx_table['StarRad'].filled()*u.solRad)**2
+            host_logg = np.ma.log10(np.ma.masked_invalid(host_grav.cgs.value))  # logg cgs
+            NArx_table['StarLogg'][NArx_table['StarLogg'].mask] = host_logg[NArx_table['StarLogg'].mask]
+        else:
+            # Create fully masked columns for AngSep and PlanetLogg
+            NArx_table.add_columns([MaskedColumn(length=len(NArx_table),mask=True,fill_value=np.nan)]*2,
+                       names=['AngSep','PlanetLogg'])
+
+        #-- Deal with units (conversions and Quantity multiplications)
+        # Set host luminosity to L/Lsun from log10(L/Lsun)
+        NArx_table['StarLum'] = 10**NArx_table['StarLum']    # L/Lsun
+        # Make sure all number fill_values are np.nan after the column manipulations
+        for col in NArx_table.colnames:
+            if isinstance(NArx_table[col].fill_value,(int,float)):
+                # Only change numeric fill values to nan
+                NArx_table[col].fill_value = np.nan
+        # Fill in masked values 
+        NArx_table = NArx_table.filled()
+        # Apply units to specific columns (to match format from ExoSims-based class)
+        NArx_table['AngSep'] *= u.mas
+        NArx_table['SMA']    *= u.AU
+        NArx_table['Inc']    *= u.deg
+        NArx_table['ProjAU'] *= u.AU
+        NArx_table['StarZ']  *= u.dex
+        NArx_table['StarParallax'] *= u.mas
+        NArx_table['StarRadialVelocity'] *= u.km/u.s
+        NArx_table['StarVsini'] *= u.km/u.s
+        NArx_table['StarAge'] *= u.Gyr
+        NArx_table['StarLum'] *= u.solLum
         
-        # Guess the radius and gravity from Vmag and Teff only if the table-provided value 
-            # for rad and grav  are 0. This guess will be questionably reliable
-        # Create mask to be careful about 0's elsewhere too
-        mask_0 = (host_radii == 0) & (host_Vmags != 0) & (distances != 0) & (host_teff != 0)
-        host_MVs = host_Vmags[mask_0] - 5 * np.log10(distances[mask_0]/10) # absolute V mag
-        host_lums = 10**(-(host_MVs-4.83)/2.5) # L/Lsun
-        host_radii[mask_0] = (5800/host_teff[mask_0])**2 * np.sqrt(host_lums) # Rsun
-        mask_0 = (host_logg == 0) & (host_mass != 0) & (host_radii != 0) 
-        host_gravs = constants.G * (host_mass[mask_0] * u.solMass)/(host_radii[mask_0] * u.solRad)**2
-        host_logg[mask_0] = np.log10(host_gravs.to(u.cm/u.s**2).value) # logg cgs
-
-        all_data = [star_names, ras, decs, distances, flux_ratios, angseps, projaus, phase, smas, eccs, incs, masses, radii, logg, eqtemps, spts, host_mass, host_teff, host_radii, host_logg, host_Bmags, host_Vmags, host_Rmags, host_Imags, host_Jmags, host_Hmags, host_Kmags]
-        labels = ["StarName", "RA", "Dec", "Distance", "Flux Ratio", "AngSep", "ProjAU", "Phase", "SMA", "Ecc", "Inc", "PlanetMass", "PlanetRadius", "PlanetLogg", "PlanetTeq", "StarSpT", "StarMass", "StarTeff", "StarRad", "StarLogg", "StarBMag", "StarVmag", "StarRmag", "StarImag", "StarJmag", "StarHmag", "StarKmag"]
-
-        planets_table = QTable(all_data, names=labels)
-
-        self.planets = planets_table
+        self.planets = NArx_table
     
     def approximate_radii(self,masses,radii,eqtemps):
         '''
@@ -283,6 +352,7 @@ class ExoArchive_Universe(Universe):
             ref.: https://ui.adsabs.harvard.edu/abs/2017ApJ...834...17C/abstract
         - Uses Chen and Kipping 2016 for all other targets.
             ref.: https://doi.org/10.3847/2515-5172/ab4353
+            
         * Only operates on 0-valued elementes in radii vector (ie. prioritizes Archive-provided radii).
         '''
         
@@ -342,6 +412,7 @@ class ExoArchive_Universe(Universe):
             ref.: https://ui.adsabs.harvard.edu/abs/2017ApJ...834...17C/abstract
         - Uses Chen and Kipping 2016 for all other targets.
             ref.: https://doi.org/10.3847/2515-5172/ab4353
+            
         * Only operates on 0-valued elementes in masses vector (ie. prioritizes Archive-provided masses).
         '''
         
