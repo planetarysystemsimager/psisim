@@ -40,7 +40,7 @@ def plot_detected_planet_contrasts(planet_table,wv_index,detected,flux_ratios,in
 
 
 
-    seps = np.array([planet_table_entry['AngSep']/1000 for planet_table_entry in planet_table])
+    seps = np.array([planet_table_entry['AngSep'].to(u.arcsec).value for planet_table_entry in planet_table])
     
     # import pdb; pdb.set_trace()
     #Plot the non-detections
@@ -48,7 +48,7 @@ def plot_detected_planet_contrasts(planet_table,wv_index,detected,flux_ratios,in
         marker='.',label="Full Sample",s=20)
 
     # print(seps[~detected[:,wv_index]],flux_ratios[:,wv_index][~detected[:,wv_index]])
-    masses = np.array([float(planet_table_entry['PlanetMass']) for planet_table_entry in planet_table])
+    masses = np.array([planet_table_entry['PlanetMass'].to(u.earthMass).value for planet_table_entry in planet_table])
     # import pdb; pdb.set_trace()
 
     # import pdb; pdb.set_trace()
@@ -163,7 +163,7 @@ def plot_detected_planet_magnitudes(planet_table,wv_index,detected,flux_ratios,i
     planet_mag = stellar_mags+dMags
     # import pdb;pdb.set_trace()
 
-    seps = np.array([planet_table_entry['AngSep']/1000 for planet_table_entry in planet_table])
+    seps = np.array([planet_table_entry['AngSep'].to(u.arcsec).value for planet_table_entry in planet_table])
     
     # import pdb; pdb.set_trace()
     #Plot the non-detections
@@ -171,7 +171,7 @@ def plot_detected_planet_magnitudes(planet_table,wv_index,detected,flux_ratios,i
         marker='.',label="Full Sample",s=20)
 
     # print(seps[~detected[:,wv_index]],flux_ratios[:,wv_index][~detected[:,wv_index]])
-    masses = np.array([float(planet_table_entry['PlanetMass']) for planet_table_entry in planet_table])
+    masses = np.array([planet_table_entry['PlanetMass'].to(u.earthMass).value for planet_table_entry in planet_table])
     # import pdb; pdb.set_trace()
 
     # import pdb; pdb.set_trace()
@@ -229,7 +229,7 @@ def plot_detected_planet_mass(planet_table,detected,show=True,**kwargs):
     Plot a histogram of detected and non-detected planets
     '''
 
-    masses = [planet_table_entry['PlanetMass'] for planet_table_entry in planet_table]
+    masses = [planet_table_entry['PlanetMass'].to(u.earthMass).value for planet_table_entry in planet_table]
 
     fig = plt.figure(figsize=(7,4)) 
     ax1 = fig.add_subplot(111)
@@ -244,7 +244,7 @@ def plot_detected_planet_mass(planet_table,detected,show=True,**kwargs):
     Plot a histogram of detected and non-detected planets
     '''
 
-    masses = [planet_table_entry['PlanetMass'] for planet_table_entry in planet_table]
+    masses = [planet_table_entry['PlanetMass'].to(u.earthMass) for planet_table_entry in planet_table]
 
     fig = plt.figure(figsize=(7,4)) 
     ax1 = fig.add_subplot(111)

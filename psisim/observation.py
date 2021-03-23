@@ -34,7 +34,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     ##### ALL UNITS NEED TO BE PROPERLY EXAMINED #####
 
     #Some relevant planet properties
-    separation = planet_table_entry['AngSep']/1000 * u.arcsecond
+    separation = planet_table_entry['AngSep'].to(u.arcsec)
 
     star_aomag = planet_table_entry['StarAOmag']
     star_spt = planet_table_entry['StarSpT']

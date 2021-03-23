@@ -281,7 +281,7 @@ class PSI_Blue(Instrument):
 
         #For each planet, for each wavelength check the separation and the SNR
         for i,planet in enumerate(planet_table):
-            sep = planet['AngSep']/1000
+            sep = planet['AngSep'].to(u.arcsec).value
             for j,wv in enumerate(self.current_wvs): 
                 # if sep < 0.070:
                     # print(sep,snrs[i,j],(sep > iwas[j]))
