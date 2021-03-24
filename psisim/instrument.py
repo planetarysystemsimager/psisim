@@ -900,7 +900,11 @@ class kpic_phaseII(Instrument):
         filter_options = {"CFHT-Y":(0.940*u.micron,1.018*u.micron,1.090*u.micron),
                           "TwoMASS-J":(1.1*u.micron,1.248*u.micron,1.360*u.micron),
                           "TwoMASS-H":(1.480*u.micron,1.633*u.micron,1.820*u.micron),
-                          "TwoMASS-K":(1.950*u.micron,2.2*u.micron,2.45*u.micron)}
+                          # Temporarily shrink K-band size for picaso sims
+                          #    TODO: change back to full bandwidth once we have larger opacity files
+                          #"TwoMASS-K":(1.950*u.micron,2.2*u.micron,2.45*u.micron)}
+                          "TwoMASS-K":(1.981*u.micron,2.18*u.micron,2.379*u.micron)}
+                          
 
         return filter_options.get(filter_name)
 
@@ -916,7 +920,7 @@ class kpic_phaseII(Instrument):
         if self.current_filter is None:
             print("You need to set the current_filter property. \nReturning -1")
         if self.current_filter not in self.filters:
-            print("You selected filter is not valid. Please choose from {}\n Returning -1".format(filter_options.keys()))
+            print("Your selected filter is not valid. Please choose from {}\n Returning -1".format(filter_options.keys()))
             return -1
 
         #Pick the right filter based on the .current_filter property

@@ -10,6 +10,7 @@ import scipy.interpolate as si
 import copy
 from scipy.ndimage.interpolation import shift
 from scipy.ndimage import gaussian_filter
+import warnings
 
 try: 
     import pysynphot as ps
@@ -32,13 +33,15 @@ bex_cloudy_mh0 = {}
 bex_clear_mh0 = {}
 
 
-def load_picaso_opacity(dbname=None):
+def load_picaso_opacity(dbname=None,wave_range=None):
     '''
     A function that returns a picaso opacityclass from justdoit.opannection
     
     Inputs:
     dbname  - string filename, with path, for .db opacity file to load
-                   if None; will use the default file that comes with picaso distro
+              default None: will use the default file that comes with picaso distro
+    wave_range - 2 element float list with wavelength bounds for which to run models
+                 default None: will pull the entire grid from the opacity file   
     
     Returns:
     opacity - Opacity class from justdoit.opannection
@@ -51,7 +54,7 @@ def load_picaso_opacity(dbname=None):
     
     # dbname = os.path.join(opacity_folder,dbname)
     
-    return jdi.opannection(filename_db=dbname)
+    return jdi.opannection(filename_db=dbname,wave_range=wave_range)
 
 
 def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True, planet_mh=1, stellar_mh=0.0122, planet_teq=None, verbose=False):
@@ -72,9 +75,11 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
     params - picaso.justdoit.inputs class
     '''
     
-    if planet_type != "Jupiter" and verbose:
-        print("Only planet_type='Jupiter' spectra are currently implemented")
-        print("Generating a Jupiter-like spectrum")
+    planet_type = planet_type.lower()
+    
+    if planet_type != "gas" and verbose:
+        print("Only planet_type='Gas' spectra are currently implemented")
+        print("Generating a Gas-like spectrum")
 
     params = jdi.inputs()
     params.approx(raman='none')
@@ -85,7 +90,10 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
     #define gravity; any astropy units available
     pl_mass = planet_table_entry['PlanetMass']
     pl_rad  = planet_table_entry['PlanetRadius']
-    params.gravity(mass=pl_mass.value,mass_unit=pl_mass.unit,
+    pl_logg = planet_table_entry['PlanetLogg']
+    # NOTE: picaso gravity() won't use the "gravity" input if mass and radius are provided
+    params.gravity(gravity=pl_logg.physical.value,gravity_unit=pl_logg.physical.unit,
+                   mass=pl_mass.value,mass_unit=pl_mass.unit,
                    radius=pl_rad.value,radius_unit=pl_rad.unit)
 
     #The current stellar models do not like log g > 5, so we'll force it here for now. 
@@ -100,18 +108,18 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
     #define star
       #opacity db, pysynphot database, temp, metallicity, logg
     st_rad = planet_table_entry['StarRad']
+    pl_sma = planet_table_entry['SMA']
     params.star(opacity, star_Teff, stellar_mh, star_logG,
-                radius=st_rad.value, radius_unit=st_rad.unit) 
+                radius=st_rad.value, radius_unit=st_rad.unit,
+                semi_major=pl_sma.value, semi_major_unit=pl_sma.unit) 
 
     # define atmosphere PT profile and mixing ratios. 
     # PT from planetary equilibrium temperature
     if planet_teq is None:
-        pl_sma = planet_table_entry['SMA']
         planet_teq = ((st_rad/pl_sma).decompose()**2 * star_Teff**4)**(1./4)
     params.guillot_pt(planet_teq, 150, -0.5, -1)
     # get chemistry via chemical equillibrium
-    planet_C_to_O = 0.55 # not currently suggested to change this
-    params.chemeq(planet_C_to_O, planet_mh)
+    params.channon_grid_high()
 
     if clouds:
         # may need to consider tweaking these for reflected light
@@ -119,14 +127,14 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
 
     return (params, opacity)
 
-def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, opacity, package="picaso"):
+def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="picaso"):
     '''
     Simuluate a spectrum from a given package
 
     Inputs: 
     planet_table_entry - a single row, corresponding to a single planet
                             from a universe planet table [astropy table (or maybe astropy row)]
-    wvs				   - a list of wavelengths to consider
+    wvs				   - (astropy Quantity array - micron) a list of wavelengths to consider
     R				   - the resolving power
     atmospheric parameters - To be defined
 
@@ -135,24 +143,45 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, opacit
     '''
     if package.lower() == "picaso":
 
-        params, _ = atmospheric_parameters
-        model_wnos, model_alb, fp_thermal = params.spectrum(opacity, calculation='thermal+reflected')
-        model_wvs = 1./model_wnos * 1e4 # microns
-
+        params, opacity = atmospheric_parameters
+        
+        # Make sure that picaso wavelengths are within requested wavelength range
+        op_wv = opacity.wave # this is identical to the model_wvs we compute below
+        if (wvs[0].value < op_wv.min()) or (wvs[-1].value > op_wv.max()):
+            rngs = (wvs[0].value,wvs[-1].value,op_wv.min(),op_wv.max())
+            err  = "The requested wavelength range [%f, %f] is outside the range selected [%f, %f] "%rngs
+            err += "from the opacity model (%s)"%opacity.db_filename
+            raise ValueError(err) 
+        
+        # Create spectrum and extract results
+        df = params.spectrum(opacity,full_output=True,calculation='thermal+reflected')
+        model_wnos = df['wavenumber']
+        model_alb = df['albedo']
+        fpfs_thermal = df['fpfs_thermal']
+        fpfs_reflected = df['fpfs_reflected']
+        
+        # Compute combined spectrum
+        highres_fpfs = fpfs_reflected + fpfs_thermal
+        
+        # Compute model wavelength sampling
+        model_wvs = 1./model_wnos * 1e4 *u.micron        
         model_dwvs = np.abs(model_wvs - np.roll(model_wvs, 1))
         model_dwvs[0] = model_dwvs[1]
         model_R = model_wvs/model_dwvs
+        
+        # Make sure that model resolution is higher than requested resolution
+        if R > np.mean(model_R):
+            wrn = "The requested resolution (%0.2f) is higher than the opacity model resolution (%0.2f)."%(R,np.mean(model_R))
+            wrn += " This is strongly discouraged as we'll be upsampling the spectrum."
+            warnings.warn(wrn)
+        
+        lowres_fpfs = downsample_spectrum(highres_fpfs, np.mean(model_R), R)
 
-        highres_fp_reflected =  model_alb * (planet_table_entry['PlanetRadius'].to(u.au)/planet_table_entry['SMA'].to(u.au))**2 # flux ratio relative to host star
-        highres_fp = highres_fp_reflected + fp_thermal
-
-        lowres_fp = downsample_spectrum(highres_fp, np.mean(model_R), R)
-
+        # model_wvs is reversed so re-sort it and then extract requested wavelengths
         argsort = np.argsort(model_wvs)
+        fpfs = np.interp(wvs, model_wvs[argsort], lowres_fpfs[argsort])
 
-        fp = np.interp(wvs, model_wvs[argsort], lowres_fp[argsort])
-
-        return fp
+        return fpfs
 
     elif package.lower() == "picaso+pol":
         '''
@@ -163,15 +192,32 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, opacit
         for all cloud types. 
         '''
 
-        params, _ = atmospheric_parameters
-        model_wnos, model_alb = params.spectrum(opacity)
-        model_wvs = 1./model_wnos * 1e4 # microns
-
+        # TODO: @Max, Dan updated this section to match the new picaso architecture,
+        #       following the last section, but I have not tested. You may want to check
+        #       if this works.
+        
+        params, opacity = atmospheric_parameters
+        
+        # Make sure that picaso wavelengths are within requested wavelength range
+        op_wv = opacity.wave # this is identical to the model_wvs we compute below
+        if (wvs[0].value < op_wv.min()) or (wvs[-1].value > op_wv.max()):
+            rngs = (wvs[0].value,wvs[-1].value,op_wv.min(),op_wv.max())
+            err  = "The requested wavelength range [%f, %f] is outside the range selected [%f, %f] "%rngs
+            err += "from the opacity model (%s)"%opacity.db_filename
+            raise ValueError(err) 
+        
+        # Create spectrum and extract results
+        df = params.spectrum(opacity)
+        model_wnos = df['wavenumber']
+        model_alb = df['albedo']
+        
+        # Compute model wavelength sampling
+        model_wvs = 1./model_wnos * 1e4 *u.micron
         model_dwvs = np.abs(model_wvs - np.roll(model_wvs, 1))
         model_dwvs[0] = model_dwvs[1]
         model_R = model_wvs/model_dwvs
 
-        highres_fp =  model_alb * (planet_table_entry['PlanetRadius'].to(u.au)/planet_table_entry['SMA'].to(u.au))**2 # flux ratio relative to host star
+        highres_fpfs =  model_alb * (planet_table_entry['PlanetRadius'].to(u.au)/planet_table_entry['SMA'].to(u.au))**2 # flux ratio relative to host star
 
         #Get the polarization vs. albedo curve from Madhusudhan+2012, Figure 5
         albedo, peak_pol = np.loadtxt(os.path.dirname(psisim.__file__)+"/data/polarization/PeakPol_vs_albedo_Madhusudhan2012.csv",
@@ -183,17 +229,23 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, opacit
         planet_phase = planet_table_entry['Phase'].to(u.rad).value
         rayleigh_curve = np.sin(planet_phase)**2/(1+np.cos(planet_phase)**2)
         planet_polarization_fraction = interp_peak_pol*rayleigh_curve
-        highres_planet_polarized_intensity = highres_fp*planet_polarization_fraction
+        highres_planet_polarized_intensity = highres_fpfs*planet_polarization_fraction
 
-        lowres_fp = downsample_spectrum(highres_fp, np.mean(model_R), R)
+        # Make sure that model resolution is higher than requested resolution
+        if R > np.mean(model_R):
+            wrn = "The requested resolution (%0.2f) is higher than the opacity model resolution (%0.2f)."%(R,np.mean(model_R))
+            wrn += " This is strongly discouraged as we'll be upsampling the spectrum."
+            warnings.warn(wrn)
+        
+        lowres_fpfs = downsample_spectrum(highres_fpfs, np.mean(model_R), R)
         lowres_pol = downsample_spectrum(highres_planet_polarized_intensity, np.mean(model_R), R)
 
         argsort = np.argsort(model_wvs)
 
-        fp = np.interp(wvs, model_wvs[argsort], lowres_fp[argsort])
+        fpfs = np.interp(wvs, model_wvs[argsort], lowres_fpfs[argsort])
         pol = np.interp(wvs, model_wvs[argsort], lowres_pol[argsort])
 
-        return fp,pol
+        return fpfs,pol
 
     elif package.lower() == "bex-cooling":
         age, band, cloudy = atmospheric_parameters # age in years, band is 'R', 'I', 'J', 'H', 'K', 'L', 'M', cloudy is True/False
