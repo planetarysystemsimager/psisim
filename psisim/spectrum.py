@@ -140,6 +140,10 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
 
     Outputs:
     F_lambda
+    
+    
+    Notes:
+    - "picaso" mode returns reflected spec [contrast], thermal spec [ph/s/cm2/A], and the raw picaso dataframe
     '''
     if package.lower() == "picaso":
 
@@ -151,17 +155,17 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
             rngs = (wvs[0].value,wvs[-1].value,op_wv.min(),op_wv.max())
             err  = "The requested wavelength range [%f, %f] is outside the range selected [%f, %f] "%rngs
             err += "from the opacity model (%s)"%opacity.db_filename
-            raise ValueError(err) 
+        #    raise ValueError(err) 
+            warnings.warn(err)    # TODO: warn for now until we get higher res opacity files
         
         # Create spectrum and extract results
         df = params.spectrum(opacity,full_output=True,calculation='thermal+reflected')
         model_wnos = df['wavenumber']
-        model_alb = df['albedo']
-        fpfs_thermal = df['fpfs_thermal']
+        #model_alb = df['albedo']
+        #fpfs_thermal = df['fpfs_thermal']
+        #highres_fpfs = df['fpfs_total']   # from picaso: fpfs_thermal + fpfs_reflected
         fpfs_reflected = df['fpfs_reflected']
-        
-        # Compute combined spectrum
-        highres_fpfs = fpfs_reflected + fpfs_thermal
+        fp_thermal = df['thermal']
         
         # Compute model wavelength sampling
         model_wvs = 1./model_wnos * 1e4 *u.micron        
@@ -175,13 +179,19 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
             wrn += " This is strongly discouraged as we'll be upsampling the spectrum."
             warnings.warn(wrn)
         
-        lowres_fpfs = downsample_spectrum(highres_fpfs, np.mean(model_R), R)
+        lowres_fpfs_ref = downsample_spectrum(fpfs_reflected, np.mean(model_R), R)
+        lowres_fp_therm = downsample_spectrum(fp_thermal, np.mean(model_R), R)
 
         # model_wvs is reversed so re-sort it and then extract requested wavelengths
         argsort = np.argsort(model_wvs)
-        fpfs = np.interp(wvs, model_wvs[argsort], lowres_fpfs[argsort])
+        fpfs_ref = np.interp(wvs, model_wvs[argsort], lowres_fpfs_ref[argsort])
+        fp_therm = np.interp(wvs, model_wvs[argsort], lowres_fp_therm[argsort])
+        
+        # fp_therm comes in with units of ergs/s/cm^3, convert to ph/s/cm^2/Angstrom
+        fp_therm = fp_therm * u.erg/u.s/u.cm**2/u.cm
+        fp_therm = fp_therm.to(u.ph/u.s/u.cm**2/u.AA,equivalencies=u.spectral_density(wvs))
 
-        return fpfs
+        return fpfs_ref,fp_therm,df
 
     elif package.lower() == "picaso+pol":
         '''
@@ -319,8 +329,8 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
         pl_teff = ((1 - a_v)/4  * (planet_table_entry['StarRad'] / planet_table_entry['SMA']).decompose()**2 * planet_table_entry['StarTeff'].to(u.K).value**4)**(1./4)
 
         nu = consts.c/(wvs) # freq
-        bb_arg_pl = (consts.h * nu/(consts.k_B * pl_teff * u.cds.K)).decompose()
-        bb_arg_star = (consts.h * nu/(consts.k_B * planet_table_entry['StarTeff'].to(u.K).value * u.cds.K)).decompose()
+        bb_arg_pl = (consts.h * nu/(consts.k_B * pl_teff * u.K)).decompose()
+        bb_arg_star = (consts.h * nu/(consts.k_B * planet_table_entry['StarTeff'].to(u.K).value * u.K)).decompose()
 
         thermal_flux_ratio = (planet_table_entry['PlanetRadius']/planet_table_entry['StarRad']).decompose()**2 * np.expm1(bb_arg_star)/np.expm1(bb_arg_pl)
         
