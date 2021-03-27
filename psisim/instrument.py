@@ -636,7 +636,7 @@ class hispec(Instrument):
                                             site_median_seeing=self.telescope.median_seeing)
 
         #We take the minimum wavefront error between natural guide star and laser guide star errors
-        ao_wfe = np.min([np.interp(self.ao_mag,ao_rmag, ao_wfe_ngs),np.interp(self.ao_mag,ao_rmag, ao_wfe_lgs)]) * u.nm
+        ao_wfe = np.min([np.interp(self.ao_mag,ao_rmag, ao_wfe_ngs).value,np.interp(self.ao_mag,ao_rmag, ao_wfe_lgs).value]) * u.nm
 
         #Compute the ratio
         # import pdb; pdb.set_trace()
@@ -1053,7 +1053,7 @@ class kpic_phaseII(Instrument):
                                             site_median_seeing=self.telescope.median_seeing)
 
         #We take the minimum wavefront error between natural guide star and laser guide star errors
-        ao_wfe = np.min([np.interp(self.ao_mag,ao_rmag, ao_wfe_ngs),np.interp(self.ao_mag,ao_rmag, ao_wfe_lgs)]) * u.nm
+        ao_wfe = np.min([np.interp(self.ao_mag,ao_rmag, ao_wfe_ngs).value,np.interp(self.ao_mag,ao_rmag, ao_wfe_lgs).value]) * u.nm
 
         #Compute the strehl ratio
         # import pdb; pdb.set_trace()
@@ -1181,7 +1181,7 @@ class kpic_phaseII(Instrument):
                                                 site_median_seeing=telescope.median_seeing)
 
             #We take the minimum wavefront error between natural guide star and laser guide star errors
-            ao_wfe = np.min([np.interp(ao_mag,ao_rmag, ao_wfe_ngs),np.interp(ao_mag,ao_rmag, ao_wfe_lgs)]) * u.nm
+            ao_wfe = np.min([np.interp(ao_mag,ao_rmag, ao_wfe_ngs).value,np.interp(ao_mag,ao_rmag, ao_wfe_lgs).value]) * u.nm
 
             #-- Get Stellar leakage due to WFE
             #Pick the WFE coefficient based on the vortex charge. Coeff values emprically determined in simulation
@@ -1212,7 +1212,7 @@ class kpic_phaseII(Instrument):
               # Equation and coefficients are from Ruante et. al 2019
                 # https://arxiv.org/pdf/1908.09780.pdf     fig 7c
             # Convert host_diameter to units of lambda/D
-            host_diam_LoD = self.host_diameter / (wvs.to(u.m)/telescope.diameter * 206265)
+            host_diam_LoD = self.host_diameter.value / (wvs.to(u.m)/telescope.diameter * 206265)
             
             # Define Coefficients for geometric leakage equation
             if self.vortex_charge == 1:
@@ -1220,7 +1220,7 @@ class kpic_phaseII(Instrument):
             elif self.vortex_charge == 2:
                 geo_coeff = 4.2
             # Compute leakage
-            geonull = (self.host_diameter / geo_coeff)**(2*self.vortex_charge)
+            geonull = (host_diam_LoD / geo_coeff)**(2*self.vortex_charge)
             
             # Add to total contrast
             contrast += geonull
@@ -1283,6 +1283,6 @@ class kpic_phaseII(Instrument):
         Sets the host_diameter instance variable in units of arcsec
         
         Inputs:
-        host_size_in_mas - Angular diameter of the host star in units of milliarcseconds
+        host_size_in_mas - (Astropy Quantity - u.mas) Angular diameter of the host star
         '''
-        self.host_diameter = host_size_in_mas * 1e-3 # convert to arcsec
+        self.host_diameter = host_size_in_mas.to(u.arcsec)
