@@ -330,7 +330,7 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
 
         nu = consts.c/(wvs) # freq
         bb_arg_pl = (consts.h * nu/(consts.k_B * pl_teff * u.K)).decompose()
-        bb_arg_star = (consts.h * nu/(consts.k_B * planet_table_entry['StarTeff'].to(u.K).value * u.K)).decompose()
+        bb_arg_star = (consts.h * nu/(consts.k_B * planet_table_entry['StarTeff'].to(u.K))).decompose()
 
         thermal_flux_ratio = (planet_table_entry['PlanetRadius']/planet_table_entry['StarRad']).decompose()**2 * np.expm1(bb_arg_star)/np.expm1(bb_arg_pl)
         

@@ -326,11 +326,6 @@ class ExoArchive_Universe(Universe):
         #-- Deal with units (conversions and Quantity multiplications)
         # Set host luminosity to L/Lsun from log10(L/Lsun)
         NArx_table['StarLum'] = 10**NArx_table['StarLum']    # L/Lsun
-        # Round metalicity to valid range and cast to phoenix-supported strings
-        valid_Z = np.array([-4.0,-3.0,-2.0,-1.5,-1.0,-0.5,-0.0,+0.5,+1.0])
-        Z_grid = si.interp1d(valid_Z,valid_Z,kind='nearest',bounds_error=False,fill_value=np.nan)
-        Z_tmp = Z_grid(NArx_table['StarZ'].filled(1e20)).astype(str)
-        NArx_table['StarZ'] = MaskedColumn(np.ma.masked_where(Z_tmp=='nan',Z_tmp),fill_value='?')
         
         # Make sure all number fill_values are np.nan after the column manipulations
         for col in NArx_table.colnames:
