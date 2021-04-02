@@ -73,6 +73,8 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
 
     Outputs:
     params - picaso.justdoit.inputs class
+    
+    NOTE: this assumes a planet phase of 0. You can change the phase in the resulting params object afterwards.
     '''
     
     planet_type = planet_type.lower()
@@ -84,8 +86,9 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
     params = jdi.inputs()
     params.approx(raman='none')
 
-    #phase angle
-    params.phase_angle(planet_table_entry['Phase'].to(u.rad).value) #radians
+    #phase angle. Note: non-0 phase in reflectance requires a different 
+      # geometry so we'll deal with that in the simulate_spectrum() call
+    params.phase_angle(0)
 
     #define gravity; any astropy units available
     pl_mass = planet_table_entry['PlanetMass']
@@ -158,15 +161,29 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
         #    raise ValueError(err) 
             warnings.warn(err)    # TODO: warn for now until we get higher res opacity files
         
-        # Create spectrum and extract results
-        df = params.spectrum(opacity,full_output=True,calculation='thermal+reflected')
+        # non-0 phases require special geometry which takes longer to run.
+          # To improve runtime, we always run thermal with phase=0 and simple geom.
+          # and then for non-0 phase, we run reflected with the costly geometry
+        phase = planet_table_entry['Phase'].to(u.rad).value
+        if phase == 0:
+            # Perform the simple simulation since 0-phase allows simple geometry
+            df = params.spectrum(opacity,full_output=True,calculation='thermal+reflected')
+        else:
+            # Perform the thermal simulation as usual with simple geometry
+            df1 = params.spectrum(opacity,full_output=True,calculation='thermal')
+            # Apply the true phase and change geometry for the reflected simulation
+            params.phase_angle(phase, num_tangle=8, num_gangle=8)
+            df2 = params.spectrum(opacity,full_output=True,calculation='reflected')
+            # Combine the output dfs into one df to be returned
+            df = df1.copy(); df.update(df2)
+            df['full_output_therm'] = df1.pop('full_output')
+            df['full_output_ref'] = df2.pop('full_output')
+
+        # Extract what we need now
         model_wnos = df['wavenumber']
-        #model_alb = df['albedo']
-        #fpfs_thermal = df['fpfs_thermal']
-        #highres_fpfs = df['fpfs_total']   # from picaso: fpfs_thermal + fpfs_reflected
         fpfs_reflected = df['fpfs_reflected']
         fp_thermal = df['thermal']
-        
+
         # Compute model wavelength sampling
         model_wvs = 1./model_wnos * 1e4 *u.micron        
         model_dwvs = np.abs(model_wvs - np.roll(model_wvs, 1))
