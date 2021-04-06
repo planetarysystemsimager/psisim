@@ -850,8 +850,8 @@ class kpic_phaseII(Instrument):
         self.current_dwvs = None
         self.ao_mag = None
         self.mode = None
-        self.vortex_charge = None      # needed for vfn mode only
-        self.host_diameter= 0.       # needed for vfn mode only (default 0 to disable geometric leakage)
+        self.vortex_charge = None      # for vfn only
+        self.host_diameter= 0.*u.mas   # for vfn only (default 0 disables geometric leak.)
     
     def set_observing_mode(self,exposure_time,n_exposures,sci_filter,wvs,dwvs=None, mode="vfn", vortex_charge=None):
         '''
@@ -900,10 +900,7 @@ class kpic_phaseII(Instrument):
         filter_options = {"CFHT-Y":(0.940*u.micron,1.018*u.micron,1.090*u.micron),
                           "TwoMASS-J":(1.1*u.micron,1.248*u.micron,1.360*u.micron),
                           "TwoMASS-H":(1.480*u.micron,1.633*u.micron,1.820*u.micron),
-                          # Temporarily shrink K-band size for picaso sims
-                          #    TODO: change back to full bandwidth once we have larger opacity files
                           "TwoMASS-K":(1.950*u.micron,2.2*u.micron,2.45*u.micron)}
-                          #"TwoMASS-K":(1.981*u.micron,2.18*u.micron,2.379*u.micron)}
                           
 
         return filter_options.get(filter_name)
@@ -951,11 +948,13 @@ class kpic_phaseII(Instrument):
 
         th_ao = {"CFHT-Y":0.60,"TwoMASS-J":0.63,"TwoMASS-H":0.66,"TwoMASS-K":0.633}.get(self.current_filter) #K-band from Nem's Feb 2020 report
         if self.mode == 'vfn':
-            # From Dimitri: th_fiu = {"CFHT-Y":0.66,"TwoMASS-J":0.68,"TwoMASS-H":0.7,"TwoMASS-K":0.6}.get(self.current_filter) #K-band from Dimitri (KPIC OAPS+FM+dichroic+PIAA(95%)+DM Window(90%)+ADC(90%))
-            th_fiu = np.interp(wvs, th_wvs, np.prod(th_data[14:19],axis=0)*np.prod(th_data[20:29],axis=0)) # KPIC throughput from budget (omitting coro.)
+            #th_fiu = {"CFHT-Y":0.66,"TwoMASS-J":0.68,"TwoMASS-H":0.7,"TwoMASS-K":0.6}.get(self.current_filter) #K from Dimitri (KPIC OAPS+FM+dichroic+PIAA(95%)+DM Window(90%)+ADC(90%))
+            th_fiu = np.interp(wvs, th_wvs, np.prod(th_data[14:19],axis=0)*np.prod(th_data[20:29],axis=0)) # (omit coro.)
+            
             #TODO: add in vortex throughput losses (separate from apodizer losses in throughput file)
-            # From Dimitri: th_fiber = {"CFHT-Y":0.99,"TwoMASS-J":0.99,"TwoMASS-H":0.99,"TwoMASS-K":0.98}.get(self.current_filter) #from Dimitri code
-            th_fiber = np.interp(wvs, th_wvs, th_data[34]*th_data[37]) # Fiber throughput (endfaces only)
+            
+            #th_fiber = {"CFHT-Y":0.99,"TwoMASS-J":0.99,"TwoMASS-H":0.99,"TwoMASS-K":0.98}.get(self.current_filter) #from Dimitri code
+            th_fiber = np.interp(wvs, th_wvs, th_data[34]*th_data[37]) # (endfaces only)
             th_fiber = th_fiber * 0.98 # Add in constant propagation loss (0.98) for now
 
             #TODO: Figure out how thermal effects (in Observation.py) are modulated by fiber in VFN case and implement accordingly
@@ -1030,10 +1029,16 @@ class kpic_phaseII(Instrument):
         
         path = self.telescope.path
 
-        #TODO: check file and indices below; I updated it to what Dimitri's code has for KPIC
         #Read in the ao_wfe
         ao_wfe=np.genfromtxt(path+'aowfe/hispec_modhis_ao_errorbudget_v3.csv', delimiter=',',skip_header=1)
         ao_rmag = ao_wfe[:,0]
+        
+        if self.mode == 'vfn':
+            # For VFN+PyWFS, rescale WFE to use telemetry values from the PyWFS
+            # The default table includes some errors that VFN doesn't care about
+              # Based on 11/2021 telemetry, PyWFS has hit 85nm RMS WF residuals so
+              # let's set that as the best value for now and then scale up from there
+            ao_wfe[:,4] = ao_wfe[:,4] * 85/ao_wfe[0,4]
 
         # indexes for ao_wfe from Dimitri Code
         ao_wfe_ngs=ao_wfe[:,4] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
