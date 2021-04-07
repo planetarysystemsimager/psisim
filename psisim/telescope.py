@@ -175,6 +175,44 @@ class TMT(Telescope):
         throughput = {"CFHT-Y":0.91,"TwoMASS-J":0.91,"TwoMASS-H":0.91,"TwoMASS-K":0.91}.get(band,0.91)
         
         return throughput*np.ones(np.shape(wvs))
+    
+    def get_telescope_emissivity(self,wvs,band="TwoMass-J"):
+        '''
+        Get Telescope emissivity for a given observing band. 
+
+        Currently only Y,J,H and K are supported, otherwise 1-0.88 is returned. 
+
+        Args:
+            band (str): A photometric band. 
+        
+        '''
+        
+        emissivity = 1-self.get_telescope_throughput(wvs,band=band)
+
+        return emissivity
+    
+    def get_thermal_emission(self,wvs,band="TwoMass-J"):
+        '''
+        The telescope emission as a function of wavelength
+
+        Outputs:
+        thermal_emission - usnits of photons/s/cm**2/angstrom
+        '''
+
+        diffraction_limit = (wvs/self.diameter.to(u.micron)*u.radian).to(u.arcsec)
+        solidangle = diffraction_limit**2 * 1.13
+
+        # TODO: blackbody_lambda is deprecated, change to BlackBody
+        #bb_lam = BlackBody(self.temperature,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
+        #inst_therm = bb_lam(wvs)
+
+        thermal_emission = blackbody_lambda(wvs,self.temperature)
+        thermal_emission *= solidangle
+        thermal_emission = thermal_emission.to(u.ph/(u.s * u.cm**2 * u.AA),equivalencies=u.spectral_density(wvs))
+
+        thermal_emission *= self.get_telescope_emissivity(wvs,band=band)
+
+        return thermal_emission
         
 class Keck(Telescope):
     '''
