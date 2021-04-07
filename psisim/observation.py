@@ -57,7 +57,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
         stellar_spectrum *= telescope.get_atmospheric_transmission(wvs,R=instrument.current_R)
 
     #Multiply by telescope throughput
-    stellar_spectrum *= telescope.get_telescope_throughput(wvs,instrument)
+    stellar_spectrum *= telescope.get_telescope_throughput(wvs,band=instrument.current_filter)
 
     #Multiply by filter transmission
     stellar_spectrum *= instrument.get_filter_transmission(wvs,instrument.current_filter)
