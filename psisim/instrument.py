@@ -838,7 +838,8 @@ class modhis(hispec):
         self.ao_mag = None
         self.mode = None
         self.vortex_charge = None      # for vfn only
-        self.host_diameter= 0.*u.mas   # for vfn only (default 0 disables geometric leak.)
+        self.host_diameter= 0.0*u.mas  # for vfn only (default 0 disables geometric leak.)
+        self.ttarcsec = 2.0*u.arcsec   # for vfn only (assume 2mas jitter for MODHIS by default)
         
     def set_observing_mode(self,exposure_time,n_exposures,sci_filter,wvs,dwvs=None, mode="vfn", vortex_charge=None):
         '''
@@ -1069,7 +1070,7 @@ class modhis(hispec):
             print("Warning: only 'vfn' mode has been confirmed")
         
         if self.mode == "on-axis":
-           return np.ones([np.size(separations),np.size(wvs)])
+            return np.ones([np.size(separations),np.size(wvs)])
         
         if np.size(wvs) < 2:
             wvs = np.array(wvs)
@@ -1142,10 +1143,8 @@ class modhis(hispec):
             
             #-- Get Stellar leakage due to Tip/Tilt Jitter
             #TODO: Use AO_mag to determine T/T residuals 
-            # For now: Assume constant 2.0mas (RMS) T/T Jitter
-            ttarcsec = 2.0 * 1e-3 # convert to arcsec
-            # Convert to lam/D
-            ttlamD = ttarcsec / (wvs.to(u.m)/telescope.diameter * 206265)
+            # Convert jitter to lam/D
+            ttlamD = self.ttarcsec / (wvs.to(u.m)/telescope.diameter * 206265)
             
             # Use leakage approx. from Ruane et. al 2019 
                 # https://arxiv.org/pdf/1908.09780.pdf      Eq. 3
@@ -1216,6 +1215,8 @@ class modhis(hispec):
                 th_planet[i,:] = np.interp(ang_sep_resel_in, th_vfn_ideal[:,0], th_vfn_ideal[:,1])
 
         elif self.mode in ['on-axis', 'off-axis']:
+            # TODO: for on-axis mode, can use VFN charge-0 coupling curve
+            
             # Account for planet-specific injection efficiency into fiber
                 # eg. if coronagraph has separation-dependent coupling, apply here
             th_planet = 1 * np.ones([np.size(separations), np.size(wvs)]) # x1 for now since no coro.
@@ -1233,7 +1234,16 @@ class modhis(hispec):
         host_size_in_mas - (Astropy Quantity - u.mas) Angular diameter of the host star
         '''
         self.host_diameter = host_size_in_mas.to(u.arcsec)
-
+    
+    def set_vfn_tt_jitter(self,tt_jitter_in_mas):
+        '''
+        Sets the ttarcsec instance variable in units of arcsec. This jitter is used
+          to determine the VFN null depth tip/tilt leakage term.
+        
+        Inputs:
+        tt_jitter_in_mas - (Astropy Quantity - u.mas) RMS TT jitter for the system
+        '''
+        self.ttarcsec = tt_jitter_in_mas.to(u.arcsec)
 
 class kpic_phaseII(Instrument):
     '''
