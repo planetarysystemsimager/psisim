@@ -839,7 +839,7 @@ class modhis(hispec):
         self.mode = None
         self.vortex_charge = None      # for vfn only
         self.host_diameter= 0.0*u.mas  # for vfn only (default 0 disables geometric leak.)
-        self.ttarcsec = 2.0*u.arcsec   # for vfn only (assume 2mas jitter for MODHIS by default)
+        self.ttarcsec = (2.0*u.mas).to(u.arcsec)   # for vfn only (assume 2mas jitter for MODHIS by default)
         
     def set_observing_mode(self,exposure_time,n_exposures,sci_filter,wvs,dwvs=None, mode="vfn", vortex_charge=None):
         '''
@@ -1144,7 +1144,7 @@ class modhis(hispec):
             #-- Get Stellar leakage due to Tip/Tilt Jitter
             #TODO: Use AO_mag to determine T/T residuals 
             # Convert jitter to lam/D
-            ttlamD = self.ttarcsec / (wvs.to(u.m)/telescope.diameter * 206265)
+            ttlamD = self.ttarcsec.value / (wvs.to(u.m)/telescope.diameter * 206265)
             
             # Use leakage approx. from Ruane et. al 2019 
                 # https://arxiv.org/pdf/1908.09780.pdf      Eq. 3
