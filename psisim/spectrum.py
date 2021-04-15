@@ -65,7 +65,7 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
     Inputs:
     planet_table_entry - a single row, corresponding to a single planet
                             from a universe planet table [astropy table (or maybe astropy row)]
-    planet_type - either "Terrestrial", "Ice" or "Gas" [string]
+    planet_type - either "Terrestrial", "Ice", "Gas", or "Hot_Jup" [string]
     clouds - cloud parameters. For now, only accept True/False to turn clouds on and off
     planet_mh - planetary metalicity. 1 = 1x Solar
     stellar_mh - stellar metalicity
@@ -79,18 +79,20 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
     
     planet_type = planet_type.lower()
     
-    if planet_type != "gas" and verbose:
-        print("Only planet_type='Gas' spectra are currently implemented")
+    if (planet_type not in ["gas", "hot_jup"]) and verbose:
+        print("Only planet_type='Gas' or 'hot_jup' spectra are currently implemented")
         print("Generating a Gas-like spectrum")
+        planet_type = 'gas'
 
     params = jdi.inputs()
     params.approx(raman='none')
 
-    #phase angle. Note: non-0 phase in reflectance requires a different 
+    #-- Set phase angle.
+    # Note: non-0 phase in reflectance requires a different 
       # geometry so we'll deal with that in the simulate_spectrum() call
     params.phase_angle(0)
 
-    #define gravity; any astropy units available
+    #-- Define gravity; any astropy units available
     pl_mass = planet_table_entry['PlanetMass']
     pl_rad  = planet_table_entry['PlanetRadius']
     pl_logg = planet_table_entry['PlanetLogg']
@@ -99,6 +101,7 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
                    mass=pl_mass.value,mass_unit=pl_mass.unit,
                    radius=pl_rad.value,radius_unit=pl_rad.unit)
 
+    #-- Define star properties
     #The current stellar models do not like log g > 5, so we'll force it here for now. 
     star_logG = planet_table_entry['StarLogg'].to(u.dex(u.cm/ u.s**2)).value
     if star_logG > 5.0:
@@ -106,8 +109,7 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
     #The current stellar models do not like Teff < 3500, so we'll force it here for now. 
     star_Teff = planet_table_entry['StarTeff'].to(u.K).value
     if star_Teff < 3500:
-        star_Teff = 3500
-        
+        star_Teff = 3500   
     #define star
       #opacity db, pysynphot database, temp, metallicity, logg
     st_rad = planet_table_entry['StarRad']
@@ -116,17 +118,23 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
                 radius=st_rad.value, radius_unit=st_rad.unit,
                 semi_major=pl_sma.value, semi_major_unit=pl_sma.unit) 
 
-    # define atmosphere PT profile and mixing ratios. 
-    # PT from planetary equilibrium temperature
-    if planet_teq is None:
-        planet_teq = ((st_rad/pl_sma).decompose()**2 * star_Teff**4)**(1./4)
-    params.guillot_pt(planet_teq, 150, -0.5, -1)
-    # get chemistry via chemical equillibrium
-    params.channon_grid_high()
+    #-- Define atmosphere PT profile, mixing ratios, and clouds
+    if planet_type == 'gas':
+        # PT from planetary equilibrium temperature
+        if planet_teq is None:
+            planet_teq = ((st_rad/pl_sma).decompose()**2 * star_Teff**4)**(1./4)
+        params.guillot_pt(planet_teq, 150, -0.5, -1)
+        # get chemistry via chemical equillibrium
+        params.channon_grid_high()
 
-    if clouds:
-        # may need to consider tweaking these for reflected light
-        params.clouds( g0=[0.9], w0=[0.99], opd=[0.5], p = [1e-3], dp=[5])
+        if clouds:
+            # may need to consider tweaking these for reflected light
+            params.clouds( g0=[0.9], w0=[0.99], opd=[0.5], p = [1e-3], dp=[5])
+    elif planet_type == 'hot_jup':
+        # Use picaso's hot jupiter profiles
+        params.atmosphere(filename = jdi.HJ_pt(), delim_whitespace=True)
+        if clouds:
+            params.clouds(filename = jdi.HJ_cld(), delim_whitespace=True)
 
     return (params, opacity)
 
@@ -159,7 +167,7 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
             err  = "The requested wavelength range [%f, %f] is outside the range selected [%f, %f] "%rngs
             err += "from the opacity model (%s)"%opacity.db_filename
         #    raise ValueError(err) 
-            warnings.warn(err)    # TODO: warn for now until we get higher res opacity files
+            warnings.warn(err)    
         
         # non-0 phases require special geometry which takes longer to run.
           # To improve runtime, we always run thermal with phase=0 and simple geom.
