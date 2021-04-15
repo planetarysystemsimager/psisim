@@ -229,7 +229,7 @@ def get_noise_components(separation,star_aomag,instrument,wvs,star_spt,stellar_s
 
     # Multiply the read noise by sqrt(n_exposures)
     # import pdb; pdb.set_trace() 
-    read_noise = np.ones(np.shape(wvs.value))*np.sqrt(instrument.n_exposures)*instrument.read_noise
+    read_noise = np.ones(np.shape(wvs.value))*np.sqrt(instrument.n_exposures)*instrument.read_noise*instrument.spatial_sampling
     
     # detector_spectrum += dark_current
     # dark_noise = np.ones(np.shape(wvs.value))*np.sqrt(dark_current.value) * u.electron
