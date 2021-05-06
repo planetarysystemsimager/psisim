@@ -13,9 +13,6 @@ from astropy.modeling.blackbody import blackbody_lambda, blackbody_nu
 from psisim.instruments.template import Instrument
 from psisim.instruments.psi import *
 
-
- 
-
 class hispec(Instrument):
     '''
     An implementation of Instrument for Hispec
@@ -417,7 +414,6 @@ class modhis(hispec):
         print("MODHIS is horribly incomplete at this point")
 
     #To be continued. 
-
 
 class kpic_phaseII(Instrument):
     '''
