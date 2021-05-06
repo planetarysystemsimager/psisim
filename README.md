@@ -20,12 +20,13 @@ Pull this repository:
 ```
 > git clone https://github.com/planetarysystemsimager/psisim.git
 ```
-Move into that directory and run the `setup.py` script to install. Use the develop keyword to stay up to date with new changes:
+Move into that directory and run the following to pip install `psisim` and its dependencies:
 ```
-> python setup.py develop
+> pip install -e .
 ```
+Note that some dependencies like `pysynphot` require some manual steps (see below):
 
-In order to run the simulations, HISPEC error budgets and sampled atmospheric data must also be downloaded. At the moment, these are hosted online by [Jason](https://caltech.app.box.com/s/ce7hgt56usd1vfvzhn2kv8n7d9cojro6)
+In order to run the simulations for HISPEC, HISPEC error budgets and sampled atmospheric data must also be downloaded. At the moment, these are hosted online by [Jason](https://caltech.app.box.com/s/ce7hgt56usd1vfvzhn2kv8n7d9cojro6)
 
 Optionally install [EXOSIMS](https://github.com/dsavransky/EXOSIMS) (if you want to simulate exoplanet populations), [PICASO](https://github.com/natashabatalha/picaso) (if you want to generate exoplanet spectra on the fly), and [pyVO](https://github.com/astropy/pyvo) (if you want to pull the latest NASA exoplanet archive planet tables) following the documentation for the respective packages. Installation can also be achieved through cloning the github repositories.
 
