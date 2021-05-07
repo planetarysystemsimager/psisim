@@ -5,6 +5,7 @@ from scipy.ndimage.filters import median_filter
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d, RegularGridInterpolator as rgi
 import astropy.units as u
+import warnings
 
 #Compute CCF SNR based on match filter
 def compute_ccf_snr_matchedfilter(signal, model, total_noise, sky_trans, systematics_residuals=0.01,kernel_size=501,norm_cutoff=0.8):
@@ -50,6 +51,67 @@ def compute_ccf_snr_matchedfilter(signal, model, total_noise, sky_trans, systema
     ccf_snr = np.sqrt((np.sum(signal_filt * model_filt/total_noise_var))**2 / np.sum(model_filt * model_filt/total_noise_var))
 
     return ccf_snr
+
+# Compute exposure time required to achieve a specific CCF SNR
+def compute_exp_time_to_ccf_snr_matchedfilter(signal, model, photon_noise, read_noise, systematics, sky_trans, instrument, goal_ccf, systematics_residuals=0.01, kernel_size=501, norm_cutoff=0.8):
+    '''
+    Calculate the time required to achieve a desired CCF SNR with a matched filter
+
+    Inputs:
+    signal      - Your observed spectrum
+    model       - Your model spectrum
+    photon_noise - photon noise as returned by simulate_observation()
+    read_noise  - read noise as returned by simulate_observation()
+    systematics - systematic noise: (cal*(host_flux_at_obj+thermal_spec))**2
+    sky_trans   - The sky transmission
+    instrument  - a psisim instrument object
+    goal_ccf    - CCF SNR for which exposure time will be computed
+    systematics_residuals - A multiplicative factor that estimates the residual level of the host star spectrum and telluric lines in your signal (Default of 1%)
+    kernel_size  - The default high-pass filter size.
+    norm_cutoff  - A cutoff below which we don't calculate the ccf-snr
+    '''
+    # TODO: This function does not account for read_noise or systematics at the moment
+      # To account for read_noise, we need to change how the number of frames is done in PSISIM
+      # For systematics, we need to find a nice way to invert the CCF SNR equation when systematics are present
+    warnings.warn('This function is incomplete at the moment. Double check all results for accuracy.')
+    
+    # Compute total obs. time from instrument object
+    obs_time = (instrument.n_exposures * instrument.exposure_time).value
+    
+    # Remove time to get flux
+    signal = signal / obs_time
+    model  = model / obs_time
+    
+    #Get the noise variance
+    total_noise_flux = (photon_noise**2 /obs_time) #+ (read_noise**2/instrument.n_exposures) #+ (systematics/ (obs_time**2))
+    bad_noise = np.isnan(total_noise_flux)
+    total_noise_flux[bad_noise]=np.inf
+
+    #Calculate some normalization factor
+    #Dimitri to explain this better. 
+    norm = ((1-systematics_residuals)*sky_trans)
+    
+    #Get a median-filtered version of your model spectrum
+    model_medfilt = medfilt(model,kernel_size=kernel_size)
+    #Subtract the median version from the original model, effectively high-pass filtering the model
+    model_filt = model.value-model_medfilt
+    model_filt[np.isnan(model_filt)] = 0.
+    model_filt[norm<norm_cutoff] = 0.
+    model_filt[bad_noise] = 0.
+
+    #Divide out the sky transmision
+    normed_signal = signal/norm
+    #High-pass filter like with the model
+    signal_medfilt = medfilt(normed_signal,kernel_size=kernel_size)
+    signal_filt = normed_signal.value-signal_medfilt
+    signal_filt[np.isnan(signal_filt)] = 0.
+    signal_filt[norm<norm_cutoff] = 0.
+    signal_filt[bad_noise] = 0.
+    
+    #Now the actual ccf_snr
+    min_exp_time = goal_ccf**2 / ((np.sum(signal_filt * model_filt/total_noise_flux))**2 / np.sum(model_filt * model_filt/total_noise_flux))
+
+    return min_exp_time
 
 # The following code is built around using stacked arrays
 # If you are using multiple filters for example, pass through inputs like:

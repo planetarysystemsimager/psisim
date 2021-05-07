@@ -34,7 +34,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     ##### ALL UNITS NEED TO BE PROPERLY EXAMINED #####
 
     #Some relevant planet properties
-    separation = planet_table_entry['AngSep']/1000 * u.arcsecond
+    separation = planet_table_entry['AngSep'].to(u.arcsec)
 
     star_aomag = planet_table_entry['StarAOmag']
     star_spt = planet_table_entry['StarSpT']
@@ -57,7 +57,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
         stellar_spectrum *= telescope.get_atmospheric_transmission(wvs,R=instrument.current_R)
 
     #Multiply by telescope throughput
-    stellar_spectrum *= telescope.get_telescope_throughput(wvs,instrument)
+    stellar_spectrum *= telescope.get_telescope_throughput(wvs,band=instrument.current_filter)
 
     #Multiply by filter transmission
     stellar_spectrum *= instrument.get_filter_transmission(wvs,instrument.current_filter)
@@ -229,7 +229,7 @@ def get_noise_components(separation,star_aomag,instrument,wvs,star_spt,stellar_s
 
     # Multiply the read noise by sqrt(n_exposures)
     # import pdb; pdb.set_trace() 
-    read_noise = np.ones(np.shape(wvs.value))*np.sqrt(instrument.n_exposures)*instrument.read_noise
+    read_noise = np.ones(np.shape(wvs.value))*np.sqrt(instrument.n_exposures)*instrument.read_noise*instrument.spatial_sampling
     
     # detector_spectrum += dark_current
     # dark_noise = np.ones(np.shape(wvs.value))*np.sqrt(dark_current.value) * u.electron

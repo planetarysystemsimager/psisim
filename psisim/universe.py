@@ -2,9 +2,13 @@ import numpy as np
 import astropy.units as u
 import astropy.constants as constants
 from astropy.table import QTable, MaskedColumn
+<<<<<<< HEAD
+import scipy.interpolate as si
+=======
 import pyvo
 import json
 
+>>>>>>> origin/main
 
 class Universe():
     '''
@@ -50,8 +54,26 @@ class ExoSims_Universe(Universe):
         '''
         A function that runs EXOSIMS and takes the output to populate the planets table
         '''
+        
+        # TODO: decide  units to use for photometric mags
 
         import EXOSIMS.MissionSim
+<<<<<<< HEAD
+
+        sim = EXOSIMS.MissionSim.MissionSim(self.filename, explainFiltering=True, fillPhotometry=True, nokoMap=True)
+
+        flux_ratios = 10**(sim.SimulatedUniverse.dMag/-2.5) # grab for now from EXOSIMS
+        angseps = sim.SimulatedUniverse.WA.value * 1000 *u.mas # mas
+        projaus = sim.SimulatedUniverse.d.value * u.AU # au
+        phase = np.arccos(sim.SimulatedUniverse.r[:,2]/sim.SimulatedUniverse.d) *u.rad# planet phase  [0, pi]
+        smas = sim.SimulatedUniverse.a.value *u.AU # au
+        eccs = sim.SimulatedUniverse.e # eccentricity
+        incs = sim.SimulatedUniverse.I.value *u.deg # degrees
+        masses = sim.SimulatedUniverse.Mp.value *u.earthMass # earth masses
+        radii = sim.SimulatedUniverse.Rp.value *u.earthRad# earth radii
+        grav = constants.G * masses/(radii**2)
+        logg = np.log10(grav.to(u.cm/u.s**2).value) *u.dex(u.cm/(u.s**2))# logg cgs
+=======
         import EXOSIMS.SimulatedUniverse.SAG13Universe
 
         with open(self.filename) as ff:
@@ -78,6 +100,7 @@ class ExoSims_Universe(Universe):
         radii = su.Rp.value # earth radii
         grav = constants.G * (masses * u.earthMass)/(radii * u.earthRad)**2
         logg = np.log10(grav.to(u.cm/u.s**2).value) # logg cgs
+>>>>>>> origin/main
 
         # stellar properties
         ras = [] # deg
@@ -88,6 +111,16 @@ class ExoSims_Universe(Universe):
             ras.append(coord.ra.value)
             decs.append(coord.dec.value)
             distances.append(coord.distance.value)
+<<<<<<< HEAD
+        ras = np.array(ras) *u.deg
+        decs = np.array(decs) *u.deg
+        distances = np.array(distances) *u.pc
+        star_names =  np.array([sim.TargetList.Name[i] for i in sim.SimulatedUniverse.plan2star])
+        spts = np.array([sim.TargetList.Spec[i] for i in sim.SimulatedUniverse.plan2star])
+        sim.TargetList.stellar_mass() # generate masses if haven't
+        host_mass = np.array([sim.TargetList.MsTrue[i].value for i in sim.SimulatedUniverse.plan2star]) *u.solMass
+        host_teff = sim.TargetList.stellarTeff(sim.SimulatedUniverse.plan2star).value *u.K
+=======
         ras = np.array(ras)
         decs = np.array(decs)
         distances = np.array(distances)
@@ -96,6 +129,7 @@ class ExoSims_Universe(Universe):
         su.TargetList.stellar_mass() # generate masses if haven't
         host_mass = np.array([su.TargetList.MsTrue[i].value for i in su.plan2star])
         host_teff = su.TargetList.stellarTeff(su.plan2star).value
+>>>>>>> origin/main
         # stellar photometry
         host_Bmags = np.array([su.TargetList.Bmag[i] for i in su.plan2star])
         host_Vmags = np.array([su.TargetList.Vmag[i] for i in su.plan2star])
@@ -106,11 +140,11 @@ class ExoSims_Universe(Universe):
         host_Kmags = np.array([su.TargetList.Kmag[i] for i in su.plan2star])
         
         # guess the radius and gravity from Vmag and Teff. This is of questionable reliability
-        host_MVs = host_Vmags - 5 * np.log10(distances/10) # absolute V mag
+        host_MVs = host_Vmags - 5 * np.log10(distances.value/10) # absolute V mag
         host_lums = 10**(-(host_MVs-4.83)/2.5) # L/Lsun
-        host_radii = (5800/host_teff)**2 * np.sqrt(host_lums) # Rsun
-        host_gravs = constants.G * (host_mass * u.solMass)/(host_radii * u.solRad)**2
-        host_logg = np.log10(host_gravs.to(u.cm/u.s**2).value) # logg cgs
+        host_radii = (5800/host_teff.value)**2 * np.sqrt(host_lums)  *u.solRad# Rsun
+        host_gravs = constants.G * host_mass/(host_radii**2)
+        host_logg = np.log10(host_gravs.to(u.cm/u.s**2).value) *u.dex(u.cm/(u.s**2))# logg cgs
 
         all_data = [star_names, ras, decs, distances, flux_ratios, angseps, projaus, phase, smas, eccs, incs, masses, radii, logg, spts, host_mass, host_teff, host_radii, host_logg, host_Bmags, host_Vmags, host_Rmags, host_Imags, host_Jmags, host_Hmags, host_Kmags]
         labels = ["StarName", "RA", "Dec", "Distance", "Flux Ratio", "AngSep", "ProjAU", "Phase", "SMA", "Ecc", "Inc", "PlanetMass", "PlanetRadius", "PlanetLogg", "StarSpT", "StarMass", "StarTeff", "StarRad", "StarLogg", "StarBMag", "StarVmag", "StarRmag", "StarImag", "StarJmag", "StarHmag", "StarKmag"]
@@ -217,6 +251,9 @@ class ExoArchive_Universe(Universe):
         #-- Load/Pull data depending on provided filename
         import os
         if os.path.isfile(self.filename) and not force_new_pull:
+            
+            # Existing filename was provided so let's try use that
+            
             print("%s already exists:\n    we'll attempt to read this file as an astropy QTable"%self.filename)
 
             NArx_table = QTable.read(self.filename, format='ascii.ecsv')
@@ -231,6 +268,8 @@ class ExoArchive_Universe(Universe):
                 raise ValueError(err0+err3+err4)
 
         else:
+            # New filename was provided or a new pull was explicitly requested. Pull new data
+            
             if not force_new_pull:
                 print("%s does not exist:\n    we'll pull new data from the archive and save it to this filename"%self.filename)
             else:
@@ -269,6 +308,11 @@ class ExoArchive_Universe(Universe):
         
         #-- Change fill value from default 1e20 to np.nan
         for col in NArx_table.colnames:
+<<<<<<< HEAD
+            if isinstance(NArx_table[col],MaskedColumn) and isinstance(NArx_table[col].fill_value,(int,float)):
+                # Only change numeric fill values to nan
+                NArx_table[col].fill_value = np.nan
+=======
             try: 
                 if isinstance(NArx_table[col].fill_value,(int,float)):
                             # Only change numeric fill values to nan
@@ -277,6 +321,7 @@ class ExoArchive_Universe(Universe):
                 NArx_table[col].fill_value = ""
                 # print("column {} has no fill_value".format(col))
 
+>>>>>>> origin/main
         
         #-- Add new columns for values not easily available or computable from table
           # TODO: for now, these are masked but we should find a good way to populate them
@@ -334,30 +379,51 @@ class ExoArchive_Universe(Universe):
             NArx_table.add_columns([MaskedColumn(length=len(NArx_table),mask=True,fill_value=np.nan)]*2,
                        names=['AngSep','PlanetLogg'])
 
+            
         #-- Deal with units (conversions and Quantity multiplications)
         # Set host luminosity to L/Lsun from log10(L/Lsun)
         NArx_table['StarLum'] = 10**NArx_table['StarLum']    # L/Lsun
+        
         # Make sure all number fill_values are np.nan after the column manipulations
         for col in NArx_table.colnames:
+<<<<<<< HEAD
+            if isinstance(NArx_table[col],MaskedColumn) and isinstance(NArx_table[col].fill_value,(int,float)):
+                # Only change numeric fill values to nan
+                NArx_table[col].fill_value = np.nan
+                
+=======
             try: 
                 if isinstance(NArx_table[col].fill_value,(int,float)):
                             # Only change numeric fill values to nan
                         NArx_table[col].fill_value = np.nan
             except: 
                 NArx_table[col].fill_value = ""
+>>>>>>> origin/main
         # Fill in masked values 
         NArx_table = NArx_table.filled()
-        # Apply units to specific columns (to match format from ExoSims-based class)
-        NArx_table['AngSep'] *= u.mas
-        NArx_table['SMA']    *= u.AU
-        NArx_table['Inc']    *= u.deg
-        NArx_table['ProjAU'] *= u.AU
-        NArx_table['StarZ']  *= u.dex
-        NArx_table['StarParallax'] *= u.mas
-        NArx_table['StarRadialVelocity'] *= u.km/u.s
-        NArx_table['StarVsini'] *= u.km/u.s
-        NArx_table['StarAge'] *= u.Gyr
+        # Apply units
+        NArx_table['SMA'] *= u.AU
+        NArx_table['Inc'] *= u.deg
+        NArx_table['PlanetMass'] *= u.earthMass
+        NArx_table['PlanetRadius'] *= u.earthRad
+        NArx_table['PlanetTeq'] *= u.K
+        NArx_table['RA'] *= u.deg
+        NArx_table['Dec'] *= u.deg
+        NArx_table['Distance'] *= u.pc
+        NArx_table['StarMass'] *= u.solMass
+        NArx_table['StarTeff'] *= u.K
+        NArx_table['StarRad'] *= u.solRad
+        NArx_table['StarLogg'] *= u.dex(u.cm/(u.s**2))
         NArx_table['StarLum'] *= u.solLum
+        NArx_table['StarAge'] *= u.Gyr
+        NArx_table['StarVsini'] *= u.km/u.s
+        NArx_table['StarRadialVelocity'] *= u.km/u.s
+        #NArx_table['StarZ']  *= u.dex
+        NArx_table['StarParallax'] *= u.mas
+        NArx_table['ProjAU'] *= u.AU
+        NArx_table['Phase'] *= u.rad
+        NArx_table['AngSep'] *= u.mas
+        NArx_table['PlanetLogg'] *= u.dex(u.cm/(u.s**2))
         
         self.planets = NArx_table
     
