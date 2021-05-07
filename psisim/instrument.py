@@ -14,7 +14,6 @@ from astropy.modeling.models import BlackBody
 from psisim.instruments.template import Instrument
 from psisim.instruments.psi import *
 
-
 class hispec(Instrument):
     '''
     An implementation of Instrument for Hispec

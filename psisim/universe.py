@@ -2,7 +2,13 @@ import numpy as np
 import astropy.units as u
 import astropy.constants as constants
 from astropy.table import QTable, MaskedColumn
+<<<<<<< HEAD
 import scipy.interpolate as si
+=======
+import pyvo
+import json
+
+>>>>>>> origin/main
 
 class Universe():
     '''
@@ -52,6 +58,7 @@ class ExoSims_Universe(Universe):
         # TODO: decide  units to use for photometric mags
 
         import EXOSIMS.MissionSim
+<<<<<<< HEAD
 
         sim = EXOSIMS.MissionSim.MissionSim(self.filename, explainFiltering=True, fillPhotometry=True, nokoMap=True)
 
@@ -66,16 +73,45 @@ class ExoSims_Universe(Universe):
         radii = sim.SimulatedUniverse.Rp.value *u.earthRad# earth radii
         grav = constants.G * masses/(radii**2)
         logg = np.log10(grav.to(u.cm/u.s**2).value) *u.dex(u.cm/(u.s**2))# logg cgs
+=======
+        import EXOSIMS.SimulatedUniverse.SAG13Universe
+
+        with open(self.filename) as ff:
+            specs = json.loads(ff.read())
+
+        # sim = EXOSIMS.MissionSim.MissionSim(self.filename, explainFiltering=True, fillPhotometry=True, nokoMap=False)
+        su = EXOSIMS.SimulatedUniverse.SAG13Universe.SAG13Universe(**specs)
+
+        import json
+        import EXOSIMS.SimulatedUniverse.SAG13Universe
+        filename = "default_PSISIM_EXOSIMS_universe.json"
+        with open(filename) as ff:
+            specs = json.loads(ff.read())
+        su = EXOSIMS.SimulatedUniverse.SAG13Universe.SAG13Universe(**specs)
+
+        flux_ratios = 10**(su.dMag/-2.5)  # grab for now from EXOSIMS
+        angseps = su.WA.value * 1000 *u.mas # mas
+        projaus = su.d.value * u.AU # au
+        phase = np.arccos(su.r[:,2]/su.d)# planet phase  [0, pi]
+        smas = su.a.value*u.AU # au
+        eccs = su.e # eccentricity
+        incs = su.I.value*u.deg # degrees
+        masses = su.Mp.value # earth masses
+        radii = su.Rp.value # earth radii
+        grav = constants.G * (masses * u.earthMass)/(radii * u.earthRad)**2
+        logg = np.log10(grav.to(u.cm/u.s**2).value) # logg cgs
+>>>>>>> origin/main
 
         # stellar properties
         ras = [] # deg
         decs = [] # deg
         distances = [] # pc
-        for index in sim.SimulatedUniverse.plan2star:
-            coord = sim.TargetList.coords[index]
+        for index in su.plan2star:
+            coord = su.TargetList.coords[index]
             ras.append(coord.ra.value)
             decs.append(coord.dec.value)
             distances.append(coord.distance.value)
+<<<<<<< HEAD
         ras = np.array(ras) *u.deg
         decs = np.array(decs) *u.deg
         distances = np.array(distances) *u.pc
@@ -84,14 +120,24 @@ class ExoSims_Universe(Universe):
         sim.TargetList.stellar_mass() # generate masses if haven't
         host_mass = np.array([sim.TargetList.MsTrue[i].value for i in sim.SimulatedUniverse.plan2star]) *u.solMass
         host_teff = sim.TargetList.stellarTeff(sim.SimulatedUniverse.plan2star).value *u.K
+=======
+        ras = np.array(ras)
+        decs = np.array(decs)
+        distances = np.array(distances)
+        star_names =  np.array([su.TargetList.Name[i] for i in su.plan2star])
+        spts = np.array([su.TargetList.Spec[i] for i in su.plan2star])
+        su.TargetList.stellar_mass() # generate masses if haven't
+        host_mass = np.array([su.TargetList.MsTrue[i].value for i in su.plan2star])
+        host_teff = su.TargetList.stellarTeff(su.plan2star).value
+>>>>>>> origin/main
         # stellar photometry
-        host_Bmags = np.array([sim.TargetList.Bmag[i] for i in sim.SimulatedUniverse.plan2star])
-        host_Vmags = np.array([sim.TargetList.Vmag[i] for i in sim.SimulatedUniverse.plan2star])
-        host_Rmags = np.array([sim.TargetList.Rmag[i] for i in sim.SimulatedUniverse.plan2star])
-        host_Imags = np.array([sim.TargetList.Imag[i] for i in sim.SimulatedUniverse.plan2star])
-        host_Jmags = np.array([sim.TargetList.Jmag[i] for i in sim.SimulatedUniverse.plan2star])
-        host_Hmags = np.array([sim.TargetList.Hmag[i] for i in sim.SimulatedUniverse.plan2star])
-        host_Kmags = np.array([sim.TargetList.Kmag[i] for i in sim.SimulatedUniverse.plan2star])
+        host_Bmags = np.array([su.TargetList.Bmag[i] for i in su.plan2star])
+        host_Vmags = np.array([su.TargetList.Vmag[i] for i in su.plan2star])
+        host_Rmags = np.array([su.TargetList.Rmag[i] for i in su.plan2star])
+        host_Imags = np.array([su.TargetList.Imag[i] for i in su.plan2star])
+        host_Jmags = np.array([su.TargetList.Jmag[i] for i in su.plan2star])
+        host_Hmags = np.array([su.TargetList.Hmag[i] for i in su.plan2star])
+        host_Kmags = np.array([su.TargetList.Kmag[i] for i in su.plan2star])
         
         # guess the radius and gravity from Vmag and Teff. This is of questionable reliability
         host_MVs = host_Vmags - 5 * np.log10(distances.value/10) # absolute V mag
@@ -262,9 +308,20 @@ class ExoArchive_Universe(Universe):
         
         #-- Change fill value from default 1e20 to np.nan
         for col in NArx_table.colnames:
+<<<<<<< HEAD
             if isinstance(NArx_table[col],MaskedColumn) and isinstance(NArx_table[col].fill_value,(int,float)):
                 # Only change numeric fill values to nan
                 NArx_table[col].fill_value = np.nan
+=======
+            try: 
+                if isinstance(NArx_table[col].fill_value,(int,float)):
+                            # Only change numeric fill values to nan
+                        NArx_table[col].fill_value = np.nan
+            except: 
+                NArx_table[col].fill_value = ""
+                # print("column {} has no fill_value".format(col))
+
+>>>>>>> origin/main
         
         #-- Add new columns for values not easily available or computable from table
           # TODO: for now, these are masked but we should find a good way to populate them
@@ -329,10 +386,19 @@ class ExoArchive_Universe(Universe):
         
         # Make sure all number fill_values are np.nan after the column manipulations
         for col in NArx_table.colnames:
+<<<<<<< HEAD
             if isinstance(NArx_table[col],MaskedColumn) and isinstance(NArx_table[col].fill_value,(int,float)):
                 # Only change numeric fill values to nan
                 NArx_table[col].fill_value = np.nan
                 
+=======
+            try: 
+                if isinstance(NArx_table[col].fill_value,(int,float)):
+                            # Only change numeric fill values to nan
+                        NArx_table[col].fill_value = np.nan
+            except: 
+                NArx_table[col].fill_value = ""
+>>>>>>> origin/main
         # Fill in masked values 
         NArx_table = NArx_table.filled()
         # Apply units

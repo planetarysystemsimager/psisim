@@ -17,9 +17,10 @@ uni.simulate_EXOSIMS_Universe()
 
 planet_table = uni.planets
 full_planet_table = copy.deepcopy(uni.planets)
+
 #Down select the planets whose separations are less than lambda/D
 min_iwa = np.min(psi_blue.current_wvs).to(u.m)/tmt.diameter*u.rad
-planet_table = planet_table[planet_table['AngSep']/1000 > min_iwa.to(u.mas)]
+planet_table = planet_table[planet_table['AngSep'] > min_iwa.to(u.mas)]
 planet_table = planet_table[planet_table['Flux Ratio'] > 1e-10]
 n_planets = len(planet_table)
 
@@ -48,7 +49,6 @@ dwv_c = wv_c/intermediate_R #The delta_lambda at the central wavelength
 n_model_wv = int((model_wv_high-model_wv_low)/(dwv_c/2))*2
 #Generate the model wavelenths
 model_wvs = np.linspace(model_wv_low, model_wv_high, n_model_wv) #Choose some wavelengths
-
 
 print("\n Starting to generate planet spectra")
 
