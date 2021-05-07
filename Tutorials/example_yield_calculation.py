@@ -7,23 +7,27 @@ import time
 from astropy.io import fits
 import astropy.units as u
 
+
+### Set up the telescope and observing mode ###
 tmt = telescope.TMT()
 psi_blue = instrument.PSI_Blue()
 psi_blue.set_observing_mode(3600,10,'z',50, np.linspace(0.60,0.85,40)*u.micron) #60s, 40 exposures,z-band, R of 10
 
-exosims_config_filename = "forBruceandDimitri_EXOCAT1.json" #Some filename here
+### Generate the universe using EXOSIMS ###
+exosims_config_filename = "default_PSISIM_EXOSIMS_universe.json" #Some filename here
 uni = universe.ExoSims_Universe(exosims_config_filename)
 uni.simulate_EXOSIMS_Universe()
-
 planet_table = uni.planets
 full_planet_table = copy.deepcopy(uni.planets)
 
-#Down select the planets whose separations are less than lambda/D
+### Down select the planets whose separations are less than lambda/D ###
 min_iwa = np.min(psi_blue.current_wvs).to(u.m)/tmt.diameter*u.rad
 planet_table = planet_table[planet_table['AngSep'] > min_iwa.to(u.mas)]
 planet_table = planet_table[planet_table['Flux Ratio'] > 1e-10]
 n_planets = len(planet_table)
 
+
+### Model the spectra! ###
 planet_types = []
 planet_spectra = []
 
@@ -32,7 +36,7 @@ n_planets_now = 2
 #sequentially in EXOSIMS
 rand_planets = np.random.randint(0, n_planets, n_planets_now)
 
-########### Model spectrum wavelength choice based on instrument setup #############
+## Model spectrum wavelength choice based on instrument setup ##
 # We're going to generate a model spectrum at a resolution twice the 
 # requested resolution
 intermediate_R = psi_blue.current_R*2
@@ -52,6 +56,9 @@ model_wvs = np.linspace(model_wv_low, model_wv_high, n_model_wv) #Choose some wa
 
 print("\n Starting to generate planet spectra")
 
+#Load in the PICASO opacities
+opacities = spectrum.load_picaso_opacity()
+
 def generate_spectrum(planet):
     """
     Function to loop over to generate spectra. 
@@ -67,7 +74,7 @@ def generate_spectrum(planet):
         planet_type = "Gas"
         time1 = time.time()
     	#Generate the spectrum and downsample to intermediate resolution
-        atmospheric_parameters = spectrum.generate_picaso_inputs(planet,planet_type, clouds=True)
+        atmospheric_parameters = spectrum.generate_picaso_inputs(planet,planet_type, opacities,clouds=True)
         planet_spectrum = spectrum.simulate_spectrum(planet, model_wvs, intermediate_R, atmospheric_parameters)
         
         time2 = time.time()
@@ -77,25 +84,28 @@ def generate_spectrum(planet):
 
 ### Non parallel Code 
 for planet in planet_table[rand_planets]:
-    planet_type, planet_spectrum = generate_spectrum(planet)
+    planet_type, planet_spectrum = generate_spectrum(planet,)
     planet_types.append(planet_type)
     planet_spectra.append(planet_spectrum)
 
 ### Parallel Code
-pool = mp.Pool(processes=2) # pick the number of processes you want to use
-outputs = pool.map(generate_spectrum, planet_table[rand_planets])
+# pool = mp.Pool(processes=2) # pick the number of processes you want to use
+# outputs = pool.map(generate_spectrum, planet_table[rand_planets])
 
-for planet_type, planet_spectrum in outputs:
-    planet_types.append(planet_type)
-    planet_spectra.append(planet_spectrum)
+# for planet_type, planet_spectrum in outputs:
+#     planet_types.append(planet_type)
+#     planet_spectra.append(planet_spectrum)
 
 
 print("Done generating planet spectra")
 print("\n Starting to simulate observations")
 
-planet_spectra = np.array(planet_spectra)
 
-######################## Plot Yield ######################
+######################## Simulate the Spectra ######################
+#Here we'll assume that the AO system is depends on v-band magnitude
+planet_table['StarAOmag'] = planet_table['StarVmag']
+
+planet_spectra = np.array(planet_spectra)
 post_processing_gain=100
 sim_F_lambda, sim_F_lambda_errs,sim_F_lambda_stellar, noise_components = observation.simulate_observation_set(tmt, psi_blue,
 	planet_table[rand_planets], planet_spectra, model_wvs, intermediate_R, inject_noise=False,
@@ -110,6 +120,8 @@ flux_ratios = sim_F_lambda/sim_F_lambda_stellar
 detection_limits = sim_F_lambda_errs/sim_F_lambda_stellar
 snrs = sim_F_lambda/sim_F_lambda_errs
 
+
+######################## Plot Yield ######################
 detected = psi_blue.detect_planets(planet_table[rand_planets],snrs,tmt)
 
 #Choose which wavelength you want to plot the detections at:

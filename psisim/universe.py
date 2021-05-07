@@ -61,13 +61,6 @@ class ExoSims_Universe(Universe):
         # sim = EXOSIMS.MissionSim.MissionSim(self.filename, explainFiltering=True, fillPhotometry=True, nokoMap=False)
         su = EXOSIMS.SimulatedUniverse.SAG13Universe.SAG13Universe(**specs)
 
-        import json
-        import EXOSIMS.SimulatedUniverse.SAG13Universe
-        filename = "default_PSISIM_EXOSIMS_universe.json"
-        with open(filename) as ff:
-            specs = json.loads(ff.read())
-        su = EXOSIMS.SimulatedUniverse.SAG13Universe.SAG13Universe(**specs)
-
         flux_ratios = 10**(su.dMag/-2.5)  # grab for now from EXOSIMS
         angseps = su.WA.value * 1000 *u.mas # mas
         projaus = su.d.value * u.AU # au
@@ -95,8 +88,8 @@ class ExoSims_Universe(Universe):
         star_names =  np.array([su.TargetList.Name[i] for i in su.plan2star])
         spts = np.array([su.TargetList.Spec[i] for i in su.plan2star])
         su.TargetList.stellar_mass() # generate masses if haven't
-        host_mass = np.array([su.TargetList.MsTrue[i].value for i in su.plan2star])
-        host_teff = su.TargetList.stellarTeff(su.plan2star).value
+        host_mass = np.array([su.TargetList.MsTrue[i].value for i in su.plan2star])*u.solMass
+        host_teff = su.TargetList.stellarTeff(su.plan2star)
         # stellar photometry
         host_Bmags = np.array([su.TargetList.Bmag[i] for i in su.plan2star])
         host_Vmags = np.array([su.TargetList.Vmag[i] for i in su.plan2star])
@@ -107,7 +100,7 @@ class ExoSims_Universe(Universe):
         host_Kmags = np.array([su.TargetList.Kmag[i] for i in su.plan2star])
         
         # guess the radius and gravity from Vmag and Teff. This is of questionable reliability
-        host_MVs = host_Vmags - 5 * np.log10(distances.value/10) # absolute V mag
+        host_MVs = host_Vmags - 5 * np.log10(distances/10) # absolute V mag
         host_lums = 10**(-(host_MVs-4.83)/2.5) # L/Lsun
         host_radii = (5800/host_teff.value)**2 * np.sqrt(host_lums)  *u.solRad# Rsun
         host_gravs = constants.G * host_mass/(host_radii**2)

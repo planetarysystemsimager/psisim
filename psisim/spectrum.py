@@ -99,7 +99,7 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
     pl_rad  = planet_table_entry['PlanetRadius']
     pl_logg = planet_table_entry['PlanetLogg']
     # NOTE: picaso gravity() won't use the "gravity" input if mass and radius are provided
-    params.gravity(gravity=pl_logg.physical.value,gravity_unit=pl_logg.physical.unit,
+    params.gravity(gravity=pl_logg.value,gravity_unit=pl_logg.physical.unit,
                    mass=pl_mass.value,mass_unit=pl_mass.unit,
                    radius=pl_rad.value,radius_unit=pl_rad.unit)
 
@@ -458,7 +458,10 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
 
         # we normally want to put this in the get_castelli_kurucz_spectrum() function but the above line doens't work if we change units
         sp_norm.convert("Micron")
-        sp_norm.convert("photlam")
+        sp_norm.convert("photlam") #This is photons/s/cm^2/A
+
+        #Astropy units
+        sp_units = u.photon/u.s/(u.cm**2)/u.Angstrom
 
         stellar_spectrum = []
 
@@ -482,7 +485,7 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
             #Interpolate the spectrum to the wavelength we want
             stellar_spectrum.append(si.interp1d(sp_norm.wave,ds)(wv))
         
-        stellar_spectrum = np.array(stellar_spectrum)        
+        stellar_spectrum = np.array(stellar_spectrum)*sp_units        
 
     elif model == 'Phoenix':
         
