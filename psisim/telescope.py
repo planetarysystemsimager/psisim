@@ -127,7 +127,7 @@ class TMT(Telescope):
 
         #Interpolate it to the wavelengths we care about
         # sky_background = np.interp(wvs,sky_background_MK_wave.to(u.micron),sky_background_MK)*u.photon/(u.s*u.arcsec**2*u.nm*u.m**2) 
-        sky_background = si.interp1d(sky_background_MK_wave.to(u.micron),sky_background_MK,bounds_error=False,fill_value='extrapolate')(wvs)*u.photon/(u.s*u.arcsec**2*u.nm*u.m**2)
+        sky_background = si.interp1d(sky_background_MK_wave.to(u.micron).value,sky_background_MK,bounds_error=False,fill_value='extrapolate')(wvs)*u.photon/(u.s*u.arcsec**2*u.nm*u.m**2)
 
         if R < 1e5:
             sky_background = spectrum.downsample_spectrum(sky_background,1e5,R)*sky_background.unit
@@ -140,7 +140,7 @@ class TMT(Telescope):
 
     def get_atmospheric_transmission(self,wave,R=1e5):
         '''
-        A function that computes the sky and telescope throughput 
+        A function that computes the sky transmission as a function of wavelength
 
         Arguments 
         ----------
@@ -163,18 +163,56 @@ class TMT(Telescope):
 
     def get_telescope_throughput(self,wvs,band="TwoMass-J"):
         '''
-        Get Telescope throughput for a given observing band.  - These are Keck values
+        Get Telescope throughput for a given observing band.  
 
-        Currently only Y,TwoMASS-J,TwoMASS-H and TwoMASS-K are supported, otherwise 0.88 is returned. 
+        Currently only Y,TwoMASS-J,TwoMASS-H and TwoMASS-K are supported, otherwise 0.91 is returned. 
 
         Args:
             band (str): A photometric band. 
         
         '''
-
-        throughput = {"CFHT-Y":0.88,"TwoMASS-J":0.88,"TwoMASS-H":0.88,"TwoMASS-K":0.88}.get(band,0.88)
+        # From Dimitri's Code
+        throughput = {"CFHT-Y":0.91,"TwoMASS-J":0.91,"TwoMASS-H":0.91,"TwoMASS-K":0.91}.get(band,0.91)
         
         return throughput*np.ones(np.shape(wvs))
+    
+    def get_telescope_emissivity(self,wvs,band="TwoMass-J"):
+        '''
+        Get Telescope emissivity for a given observing band. 
+
+        Currently only Y,J,H and K are supported, otherwise 1-0.88 is returned. 
+
+        Args:
+            band (str): A photometric band. 
+        
+        '''
+        
+        emissivity = 1-self.get_telescope_throughput(wvs,band=band)
+
+        return emissivity
+    
+    def get_thermal_emission(self,wvs,band="TwoMass-J"):
+        '''
+        The telescope emission as a function of wavelength
+
+        Outputs:
+        thermal_emission - usnits of photons/s/cm**2/angstrom
+        '''
+
+        diffraction_limit = (wvs/self.diameter.to(u.micron)*u.radian).to(u.arcsec)
+        solidangle = diffraction_limit**2 * 1.13
+
+        # TODO: blackbody_lambda is deprecated, change to BlackBody
+        #bb_lam = BlackBody(self.temperature,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
+        #inst_therm = bb_lam(wvs)
+
+        thermal_emission = blackbody_lambda(wvs,self.temperature)
+        thermal_emission *= solidangle
+        thermal_emission = thermal_emission.to(u.ph/(u.s * u.cm**2 * u.AA),equivalencies=u.spectral_density(wvs))
+
+        thermal_emission *= self.get_telescope_emissivity(wvs,band=band)
+
+        return thermal_emission
         
 class Keck(Telescope):
     '''
@@ -295,6 +333,10 @@ class Keck(Telescope):
 
         diffraction_limit = (wvs/self.diameter.to(u.micron)*u.radian).to(u.arcsec)
         solidangle = diffraction_limit**2 * 1.13
+
+        # TODO: blackbody_lambda is deprecated, change to BlackBody
+        #bb_lam = BlackBody(self.temperature,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
+        #inst_therm = bb_lam(wvs)
 
         thermal_emission = blackbody_lambda(wvs,self.temperature)
         thermal_emission *= solidangle

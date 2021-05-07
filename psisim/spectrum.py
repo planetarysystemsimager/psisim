@@ -10,9 +10,16 @@ import scipy.interpolate as si
 import copy
 from scipy.ndimage.interpolation import shift
 from scipy.ndimage import gaussian_filter
+import warnings
 
 try: 
     import pysynphot as ps
+except ImportError:
+    pass
+
+try: 
+    import picaso
+    from picaso import justdoit as jdi
 except ImportError:
     pass
 
@@ -26,17 +33,31 @@ bex_cloudy_mh0 = {}
 bex_clear_mh0 = {}
 
 
-# try: 
-#     import picaso
-#     from picaso import justdoit as jdi
-#     opacity_folder = os.path.join(os.path.dirname(picaso.__file__), '..', 'reference', 'opacities')
-#     dbname = "opacity_LR.db"
-#     opacity = jdi.opannection(os.path.join(opacity_folder, dbname))
-# except ImportError:
-#     pass
+def load_picaso_opacity(dbname=None,wave_range=None):
+    '''
+    A function that returns a picaso opacityclass from justdoit.opannection
+    
+    Inputs:
+    dbname  - string filename, with path, for .db opacity file to load
+              default None: will use the default file that comes with picaso distro
+    wave_range - 2 element float list with wavelength bounds for which to run models
+                 default None: will pull the entire grid from the opacity file   
+    
+    Returns:
+    opacity - Opacity class from justdoit.opannection
+    '''
+    # Not needed anymore but kept here for reference as way to get picaso path
+    # opacity_folder = os.path.join(os.path.dirname(picaso.__file__), '..', 'reference', 'opacities')
+    
+    # Alternate assuming user has set environment variable correctly
+    # opacity_folder = os.path.join(os.getenv("picaso_refdata"),'opacities')
+    
+    # dbname = os.path.join(opacity_folder,dbname)
+    
+    return jdi.opannection(filename_db=dbname,wave_range=wave_range)
 
 
-def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True, planet_mh=1, stellar_mh=0.0122, planet_teq=None, verbose=False):
+def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True, planet_mh=1, stellar_mh=0.0122, planet_teq=None, verbose=False):
     '''
     A function that returns the required inputs for picaso, 
     given a row from a universe planet table
@@ -44,97 +65,161 @@ def generate_picaso_inputs(planet_table_entry, planet_type, clouds=True, planet_
     Inputs:
     planet_table_entry - a single row, corresponding to a single planet
                             from a universe planet table [astropy table (or maybe astropy row)]
-    planet_type - either "Terrestrial", "Ice" or "Gas" [string]
+    planet_type - either "Terrestrial", "Ice", or "Gas" [string]
     clouds - cloud parameters. For now, only accept True/False to turn clouds on and off
     planet_mh - planetary metalicity. 1 = 1x Solar
     stellar_mh - stellar metalicity
-    planet_teq - planet's equilibrium temperature. If None, esimate using blackbody equilibrium temperature
+    planet_teq - (float) planet's equilibrium temperature. If None, esimate using blackbody equilibrium temperature
 
-    Outputs:
-    params - picaso.justdoit.inputs class
+    Outputs: 
+    (as a tuple: params, opacity)
+      params - picaso.justdoit.inputs class
+      opacity - Opacity class from justdoit.opannection
+    
+    NOTE: this assumes a planet phase of 0. You can change the phase in the resulting params object afterwards.
     '''
     
+    planet_type = planet_type.lower()
+    
+    if (planet_type not in ["gas"]) and verbose:
+        print("Only planet_type='Gas' spectra are currently implemented")
+        print("Generating a Gas-like spectrum")
+        planet_type = 'gas'
 
-    global opacity
-
-    if planet_type != "Jupiter" and verbose:
-        print("Only planet_type='Jupiter' spectra are currently implemented")
-        print("Generating a Jupiter-like spectrum")
-
-    params = jdi.inputs(chemeq=True)
+    params = jdi.inputs()
     params.approx(raman='none')
 
-    #phase angle
-    params.phase_angle(planet_table_entry['Phase']) #radians
+    #-- Set phase angle.
+    # Note: non-0 phase in reflectance requires a different 
+      # geometry so we'll deal with that in the simulate_spectrum() call
+    params.phase_angle(0)
 
-    #define gravity
-    params.gravity(gravity=10**planet_table_entry['PlanetLogg'], gravity_unit=u.Unit('cm/(s**2)'), 
-                    mass=planet_table_entry['PlanetMass'], mass_unit=u.earthMass,
-                    radius=planet_table_entry['PlanetRad'], radius_unit=u.earthRad) #any astropy units available
+    #-- Define gravity; any astropy units available
+    pl_mass = planet_table_entry['PlanetMass']
+    pl_rad  = planet_table_entry['PlanetRadius']
+    pl_logg = planet_table_entry['PlanetLogg']
+    # NOTE: picaso gravity() won't use the "gravity" input if mass and radius are provided
+    params.gravity(gravity=pl_logg.physical.value,gravity_unit=pl_logg.physical.unit,
+                   mass=pl_mass.value,mass_unit=pl_mass.unit,
+                   radius=pl_rad.value,radius_unit=pl_rad.unit)
 
+    #-- Define star properties
     #The current stellar models do not like log g > 5, so we'll force it here for now. 
-    star_logG = planet_table_entry['StarLogg']
+    star_logG = planet_table_entry['StarLogg'].to(u.dex(u.cm/ u.s**2)).value
     if star_logG > 5.0:
         star_logG = 5.0
     #The current stellar models do not like Teff < 3500, so we'll force it here for now. 
-    star_Teff = planet_table_entry['StarTeff']
+    star_Teff = planet_table_entry['StarTeff'].to(u.K).value
     if star_Teff < 3500:
-        star_Teff = 3500
-        
+        star_Teff = 3500   
     #define star
-    params.star(opacity, star_Teff, stellar_mh, star_logG, radius=planet_table_entry['StarRad'], radius_unit=u.solRad) #opacity db, pysynphot database, temp, metallicity, logg
+      #opacity db, pysynphot database, temp, metallicity, logg
+    st_rad = planet_table_entry['StarRad']
+    pl_sma = planet_table_entry['SMA']
+    params.star(opacity, star_Teff, stellar_mh, star_logG,
+                radius=st_rad.value, radius_unit=st_rad.unit,
+                semi_major=pl_sma.value, semi_major_unit=pl_sma.unit) 
 
-    # define atmosphere PT profile and mixing ratios. 
-    # PT from planetary equilibrium temperature
-    if planet_teq is None:
-        planet_teq = ((planet_table_entry['StarRad'] * u.solRad/(planet_table_entry['SMA'] * u.au)).decompose()**2 * planet_table_entry['StarTeff']**4)**(1./4)
-    params.guillot_pt(planet_teq, 150, -0.5, -1)
-    # get chemistry via chemical equillibrium
-    planet_C_to_O = 0.55 # not currently suggested to change this
-    params.chemeq(planet_C_to_O, planet_mh)
+    #-- Define atmosphere PT profile, mixing ratios, and clouds
+    if planet_type == 'gas':
+        # PT from planetary equilibrium temperature
+        if planet_teq is None:
+            planet_teq = ((st_rad/pl_sma).decompose()**2 * star_Teff**4)**(1./4)
+        params.guillot_pt(planet_teq, 150, -0.5, -1)
+        # get chemistry via chemical equillibrium
+        params.channon_grid_high()
 
-    if clouds:
-        # may need to consider tweaking these for reflected light
-        params.clouds( g0=[0.9], w0=[0.99], opd=[0.5], p = [1e-3], dp=[5])
+        if clouds:
+            # may need to consider tweaking these for reflected light
+            params.clouds( g0=[0.9], w0=[0.99], opd=[0.5], p = [1e-3], dp=[5])
+    elif planet_type == 'terrestrial':
+        # TODO: add Terrestrial type
+        pass
+    elif planet_type == 'ice':
+        # TODO: add ice type
+        pass
 
     return (params, opacity)
 
-def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, package="picaso"):
+def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="picaso"):
     '''
     Simuluate a spectrum from a given package
 
     Inputs: 
     planet_table_entry - a single row, corresponding to a single planet
                             from a universe planet table [astropy table (or maybe astropy row)]
-    wvs				   - a list of wavelengths to consider
+    wvs				   - (astropy Quantity array - micron) a list of wavelengths to consider
     R				   - the resolving power
     atmospheric parameters - To be defined
 
     Outputs:
     F_lambda
+    
+    
+    Notes:
+    - "picaso" mode returns reflected spec [contrast], thermal spec [ph/s/cm2/A], and the raw picaso dataframe
     '''
-    global opacity
     if package.lower() == "picaso":
-        # global opacity
 
-        params, _ = atmospheric_parameters
-        model_wnos, model_alb, fp_thermal = params.spectrum(opacity, calculation='thermal+reflected')
-        model_wvs = 1./model_wnos * 1e4 # microns
+        params, opacity = atmospheric_parameters
+        
+        # Make sure that picaso wavelengths are within requested wavelength range
+        op_wv = opacity.wave # this is identical to the model_wvs we compute below
+        if (wvs[0].value < op_wv.min()) or (wvs[-1].value > op_wv.max()):
+            rngs = (wvs[0].value,wvs[-1].value,op_wv.min(),op_wv.max())
+            err  = "The requested wavelength range [%f, %f] is outside the range selected [%f, %f] "%rngs
+            err += "from the opacity model (%s)"%opacity.db_filename
+        #    raise ValueError(err) 
+            warnings.warn(err)    
+        
+        # non-0 phases require special geometry which takes longer to run.
+          # To improve runtime, we always run thermal with phase=0 and simple geom.
+          # and then for non-0 phase, we run reflected with the costly geometry
+        phase = planet_table_entry['Phase'].to(u.rad).value
+        if phase == 0:
+            # Perform the simple simulation since 0-phase allows simple geometry
+            df = params.spectrum(opacity,full_output=True,calculation='thermal+reflected')
+        else:
+            # Perform the thermal simulation as usual with simple geometry
+            df1 = params.spectrum(opacity,full_output=True,calculation='thermal')
+            # Apply the true phase and change geometry for the reflected simulation
+            params.phase_angle(phase, num_tangle=8, num_gangle=8)
+            df2 = params.spectrum(opacity,full_output=True,calculation='reflected')
+            # Combine the output dfs into one df to be returned
+            df = df1.copy(); df.update(df2)
+            df['full_output_therm'] = df1.pop('full_output')
+            df['full_output_ref'] = df2.pop('full_output')
 
+        # Extract what we need now
+        model_wnos = df['wavenumber']
+        fpfs_reflected = df['fpfs_reflected']
+        fp_thermal = df['thermal']
+
+        # Compute model wavelength sampling
+        model_wvs = 1./model_wnos * 1e4 *u.micron        
         model_dwvs = np.abs(model_wvs - np.roll(model_wvs, 1))
         model_dwvs[0] = model_dwvs[1]
         model_R = model_wvs/model_dwvs
+        
+        # Make sure that model resolution is higher than requested resolution
+        if R > np.mean(model_R):
+            wrn = "The requested resolution (%0.2f) is higher than the opacity model resolution (%0.2f)."%(R,np.mean(model_R))
+            wrn += " This is strongly discouraged as we'll be upsampling the spectrum."
+            warnings.warn(wrn)
+        
+        lowres_fpfs_ref = downsample_spectrum(fpfs_reflected, np.mean(model_R), R)
+        lowres_fp_therm = downsample_spectrum(fp_thermal, np.mean(model_R), R)
 
-        highres_fp_reflected =  model_alb * (planet_table_entry['PlanetRadius']*u.earthRad.to(u.au)/planet_table_entry['SMA'])**2 # flux ratio relative to host star
-        highres_fp = highres_fp_reflected + fp_thermal
-
-        lowres_fp = downsample_spectrum(highres_fp, np.mean(model_R), R)
-
+        # model_wvs is reversed so re-sort it and then extract requested wavelengths
         argsort = np.argsort(model_wvs)
+        fpfs_ref = np.interp(wvs, model_wvs[argsort], lowres_fpfs_ref[argsort])
+        fp_therm = np.interp(wvs, model_wvs[argsort], lowres_fp_therm[argsort])
+        
+        # fp_therm comes in with units of ergs/s/cm^3, convert to ph/s/cm^2/Angstrom
+        fp_therm = fp_therm * u.erg/u.s/u.cm**2/u.cm
+        fp_therm = fp_therm.to(u.ph/u.s/u.cm**2/u.AA,equivalencies=u.spectral_density(wvs))
 
-        fp = np.interp(wvs, model_wvs[argsort], lowres_fp[argsort])
-
-        return fp
+        return fpfs_ref,fp_therm,df
 
     elif package.lower() == "picaso+pol":
         '''
@@ -144,18 +229,33 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         I'm pretty sure this is based on Rayleigh scattering, and may not be valid 
         for all cloud types. 
         '''
+
+        # TODO: @Max, Dan updated this section to match the new picaso architecture,
+        #       following the last section, but I have not tested. You may want to check
+        #       if this works.
         
-        # global opacity
-
-        params, _ = atmospheric_parameters
-        model_wnos, model_alb = params.spectrum(opacity)
-        model_wvs = 1./model_wnos * 1e4 # microns
-
+        params, opacity = atmospheric_parameters
+        
+        # Make sure that picaso wavelengths are within requested wavelength range
+        op_wv = opacity.wave # this is identical to the model_wvs we compute below
+        if (wvs[0].value < op_wv.min()) or (wvs[-1].value > op_wv.max()):
+            rngs = (wvs[0].value,wvs[-1].value,op_wv.min(),op_wv.max())
+            err  = "The requested wavelength range [%f, %f] is outside the range selected [%f, %f] "%rngs
+            err += "from the opacity model (%s)"%opacity.db_filename
+            raise ValueError(err) 
+        
+        # Create spectrum and extract results
+        df = params.spectrum(opacity)
+        model_wnos = df['wavenumber']
+        model_alb = df['albedo']
+        
+        # Compute model wavelength sampling
+        model_wvs = 1./model_wnos * 1e4 *u.micron
         model_dwvs = np.abs(model_wvs - np.roll(model_wvs, 1))
         model_dwvs[0] = model_dwvs[1]
         model_R = model_wvs/model_dwvs
 
-        highres_fp =  model_alb * (planet_table_entry['PlanetRadius']*u.earthRad.to(u.au)/planet_table_entry['SMA'])**2 # flux ratio relative to host star
+        highres_fpfs =  model_alb * (planet_table_entry['PlanetRadius'].to(u.au)/planet_table_entry['SMA'].to(u.au))**2 # flux ratio relative to host star
 
         #Get the polarization vs. albedo curve from Madhusudhan+2012, Figure 5
         albedo, peak_pol = np.loadtxt(os.path.dirname(psisim.__file__)+"/data/polarization/PeakPol_vs_albedo_Madhusudhan2012.csv",
@@ -164,20 +264,26 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         interp_peak_pol = np.interp(model_alb,albedo,peak_pol)
 
         #Calculate polarized intensity, given the phase and albedo
-        planet_phase = planet_table_entry['Phase']
+        planet_phase = planet_table_entry['Phase'].to(u.rad).value
         rayleigh_curve = np.sin(planet_phase)**2/(1+np.cos(planet_phase)**2)
         planet_polarization_fraction = interp_peak_pol*rayleigh_curve
-        highres_planet_polarized_intensity = highres_fp*planet_polarization_fraction
+        highres_planet_polarized_intensity = highres_fpfs*planet_polarization_fraction
 
-        lowres_fp = downsample_spectrum(highres_fp, np.mean(model_R), R)
+        # Make sure that model resolution is higher than requested resolution
+        if R > np.mean(model_R):
+            wrn = "The requested resolution (%0.2f) is higher than the opacity model resolution (%0.2f)."%(R,np.mean(model_R))
+            wrn += " This is strongly discouraged as we'll be upsampling the spectrum."
+            warnings.warn(wrn)
+        
+        lowres_fpfs = downsample_spectrum(highres_fpfs, np.mean(model_R), R)
         lowres_pol = downsample_spectrum(highres_planet_polarized_intensity, np.mean(model_R), R)
 
         argsort = np.argsort(model_wvs)
 
-        fp = np.interp(wvs, model_wvs[argsort], lowres_fp[argsort])
+        fpfs = np.interp(wvs, model_wvs[argsort], lowres_fpfs[argsort])
         pol = np.interp(wvs, model_wvs[argsort], lowres_pol[argsort])
 
-        return fp,pol
+        return fpfs,pol
 
     elif package.lower() == "bex-cooling":
         age, band, cloudy = atmospheric_parameters # age in years, band is 'R', 'I', 'J', 'H', 'K', 'L', 'M', cloudy is True/False
@@ -192,7 +298,7 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
             bex_grid = bex_clear_mh0
 
         masses = np.array(list(bex_grid.keys()))
-        closest_indices = np.argsort(np.abs(masses - planet_table_entry['PlanetMass']))
+        closest_indices = np.argsort(np.abs(masses - planet_table_entry['PlanetMass'].to(u.earthMass).value))
         
         mass1 = masses[closest_indices[0]]
         mass2 = masses[closest_indices[1]]
@@ -231,10 +337,10 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
         fp2 = si.interp1d(curve2['Age'], curve2[bexlabel], bounds_error=False, fill_value="extrapolate")(logage)
 
         # linear interpolate in log Mass, extrapoalte as necessary
-        fp = si.interp1d(np.log10([mass1, mass2]), [fp1, fp2], bounds_error=False, fill_value="extrapolate")(np.log10(planet_table_entry['PlanetMass'])) # magnitude
+        fp = si.interp1d(np.log10([mass1, mass2]), [fp1, fp2], bounds_error=False, fill_value="extrapolate")(np.log10(planet_table_entry['PlanetMass'].to(u.earthMass).value)) # magnitude
 
         # correct for distance
-        fp = fp + 5 * np.log10(planet_table_entry['Distance']/10)
+        fp = fp + 5 * np.log10(planet_table_entry['Distance'].to(u.pc).value/10)
 
         fs = planet_table_entry[starlabel] # magnitude
 
@@ -248,17 +354,17 @@ def simulate_spectrum(planet_table_entry, wvs, R, atmospheric_parameters, packag
 
     elif package.lower() == "blackbody":
         a_v = atmospheric_parameters # just albedo
-        pl_teff = ((1 - a_v)/4  * (planet_table_entry['StarRad'] * u.solRad/(planet_table_entry['SMA'])).decompose()**2 * planet_table_entry['StarTeff']**4)**(1./4)
+        pl_teff = ((1 - a_v)/4  * (planet_table_entry['StarRad'] / planet_table_entry['SMA']).decompose()**2 * planet_table_entry['StarTeff'].to(u.K).value**4)**(1./4)
 
         nu = consts.c/(wvs) # freq
-        bb_arg_pl = (consts.h * nu/(consts.k_B * pl_teff * u.cds.K)).decompose()
-        bb_arg_star = (consts.h * nu/(consts.k_B * planet_table_entry['StarTeff'] * u.cds.K)).decompose()
+        bb_arg_pl = (consts.h * nu/(consts.k_B * pl_teff * u.K)).decompose()
+        bb_arg_star = (consts.h * nu/(consts.k_B * planet_table_entry['StarTeff'].to(u.K))).decompose()
 
-        thermal_flux_ratio = ((planet_table_entry['PlanetRadius'] * u.earthRad)/(planet_table_entry['StarRad'] * u.solRad)).decompose()**2 * np.expm1(bb_arg_star)/np.expm1(bb_arg_pl)
+        thermal_flux_ratio = (planet_table_entry['PlanetRadius']/planet_table_entry['StarRad']).decompose()**2 * np.expm1(bb_arg_star)/np.expm1(bb_arg_pl)
         
         #Lambertian? What is this equation - To verify later. 
         phi = (np.sin(planet_table_entry['Phase']) + (np.pi - planet_table_entry['Phase'].to(u.rad).value)*np.cos(planet_table_entry['Phase']))/np.pi
-        reflected_flux_ratio = phi * a_v / 4 * (planet_table_entry['PlanetRadius'] * u.earthRad/(planet_table_entry['SMA'])).decompose()**2
+        reflected_flux_ratio = phi * a_v / 4 * (planet_table_entry['PlanetRadius']/planet_table_entry['SMA']).decompose()**2
 
         return thermal_flux_ratio + reflected_flux_ratio
 
@@ -334,11 +440,11 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         # provide anything different
 
         #The current stellar models do not like log g > 5, so we'll force it here for now. 
-        star_logG = planet_table_entry['StarLogg']
+        star_logG = planet_table_entry['StarLogg'].to(u.dex(u.cm/ u.s**2)).value
         if star_logG > 5.0:
             star_logG = 5.0
         #The current stellar models do not like Teff < 3500, so we'll force it here for now. 
-        star_Teff = planet_table_entry['StarTeff']
+        star_Teff = planet_table_entry['StarTeff'].to(u.K).value
         if star_Teff < 3500:
             star_Teff = 3500
 
@@ -401,7 +507,7 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
             star_alpha ='0.0'
 
         #Read in the model spectrum        
-        wave_u,spec_u = get_phoenix_spectrum(planet_table_entry['StarLogg'],planet_table_entry['StarTeff'],star_z,star_alpha,path=path)
+        wave_u,spec_u = get_phoenix_spectrum(planet_table_entry['StarLogg'].to(u.dex(u.cm/ u.s**2)).value,planet_table_entry['StarTeff'].to(u.K).value,star_z,star_alpha,path=path)
 
         spec_u = scale_spectrum_to_vegamag(wave_u,spec_u,star_mag,star_filter,filters)
         new_ABmag = get_obj_ABmag(wave_u,spec_u,instrument_filter,filters)
@@ -467,8 +573,8 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
             raise ValueError("Your stellar filter of {} is not a valid option. Please choose one of: {}".format(star_filter,available_filters))
 
         #Read in the sonora spectrum
-        star_logG = planet_table_entry['StarLogg']
-        star_Teff = str(int(planet_table_entry['StarTeff']))
+        star_logG = planet_table_entry['StarLogg'].to(u.dex(u.cm/ u.s**2)).value
+        star_Teff = str(int(planet_table_entry['StarTeff'].to(u.K).value))
         wave_u,spec_u = get_sonora_spectrum(star_logG,star_Teff,path=path)
         
         spec_u = scale_spectrum_to_vegamag(wave_u,spec_u,star_mag,star_filter,filters)
@@ -533,7 +639,7 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         if delta_wv is not None:
             if "StarRadialVelocity" in planet_table_entry.keys():
                 
-                stellar_spectrum = apply_doppler_shift(wvs,stellar_spectrum,delta_wv,planet_table_entry['StarRadialVelocity'])
+                stellar_spectrum = apply_doppler_shift(wvs,stellar_spectrum,delta_wv,planet_table_entry['StarRadialVelocity'].to(u.km/u.s).value)
 
             else:
                 raise KeyError("The StarRadialVelocity key is missing from your target table. It is needed for a doppler shift. ")
@@ -844,7 +950,7 @@ def get_model_ABmags(planet_table_entry,filter_name_list, model='Phoenix',verbos
             star_alpha ='0.0'
 
         #Read in the model spectrum        
-        wave_u,spec_u = get_phoenix_spectrum(planet_table_entry['StarLogg'],planet_table_entry['StarTeff'],star_z,star_alpha,path=path)
+        wave_u,spec_u = get_phoenix_spectrum(planet_table_entry['StarLogg'].to(u.dex(u.cm/ u.s**2)).value,planet_table_entry['StarTeff'].to(u.K).value,star_z,star_alpha,path=path)
         
         #Now scasle the spectrum so that it has the appropriate vegamagnitude
         #(with an internal AB mag)
@@ -859,8 +965,8 @@ def get_model_ABmags(planet_table_entry,filter_name_list, model='Phoenix',verbos
             raise ValueError("Your stellar filter of {} is not a valid option. Please choose one of: {}".format(star_filter,available_filters))
 
         #Read in the sonora spectrum
-        star_logG = planet_table_entry['StarLogg']
-        star_Teff = str(int(planet_table_entry['StarTeff']))
+        star_logG = planet_table_entry['StarLogg'].to(u.dex(u.cm/ u.s**2)).value
+        star_Teff = str(int(planet_table_entry['StarTeff'].to(u.K).value))
         wave_u,spec_u = get_sonora_spectrum(star_logG,star_Teff,path=path)
 
         #Now scasle the spectrum so that it has the appropriate vegamagnitude
