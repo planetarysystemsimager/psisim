@@ -65,22 +65,24 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
     Inputs:
     planet_table_entry - a single row, corresponding to a single planet
                             from a universe planet table [astropy table (or maybe astropy row)]
-    planet_type - either "Terrestrial", "Ice", "Gas", or "Hot_Jup" [string]
+    planet_type - either "Terrestrial", "Ice", or "Gas" [string]
     clouds - cloud parameters. For now, only accept True/False to turn clouds on and off
     planet_mh - planetary metalicity. 1 = 1x Solar
     stellar_mh - stellar metalicity
     planet_teq - (float) planet's equilibrium temperature. If None, esimate using blackbody equilibrium temperature
 
-    Outputs:
-    params - picaso.justdoit.inputs class
+    Outputs: 
+    (as a tuple: params, opacity)
+      params - picaso.justdoit.inputs class
+      opacity - Opacity class from justdoit.opannection
     
     NOTE: this assumes a planet phase of 0. You can change the phase in the resulting params object afterwards.
     '''
     
     planet_type = planet_type.lower()
     
-    if (planet_type not in ["gas", "hot_jup"]) and verbose:
-        print("Only planet_type='Gas' or 'hot_jup' spectra are currently implemented")
+    if (planet_type not in ["gas"]) and verbose:
+        print("Only planet_type='Gas' spectra are currently implemented")
         print("Generating a Gas-like spectrum")
         planet_type = 'gas'
 
@@ -130,11 +132,12 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
         if clouds:
             # may need to consider tweaking these for reflected light
             params.clouds( g0=[0.9], w0=[0.99], opd=[0.5], p = [1e-3], dp=[5])
-    elif planet_type == 'hot_jup':
-        # Use picaso's hot jupiter profiles
-        params.atmosphere(filename = jdi.HJ_pt(), delim_whitespace=True)
-        if clouds:
-            params.clouds(filename = jdi.HJ_cld(), delim_whitespace=True)
+    elif planet_type == 'terrestrial':
+        # TODO: add Terrestrial type
+        pass
+    elif planet_type == 'ice':
+        # TODO: add ice type
+        pass
 
     return (params, opacity)
 
