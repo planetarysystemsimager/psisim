@@ -68,10 +68,10 @@ class ExoSims_Universe(Universe):
         smas = su.a.value*u.AU # au
         eccs = su.e # eccentricity
         incs = su.I.value*u.deg # degrees
-        masses = su.Mp.value # earth masses
-        radii = su.Rp.value # earth radii
-        grav = constants.G * (masses * u.earthMass)/(radii * u.earthRad)**2
-        logg = np.log10(grav.to(u.cm/u.s**2).value) # logg cgs
+        masses = su.Mp  # earth masses
+        radii = su.Rp # earth radii
+        grav = constants.G * (masses)/(radii)**2
+        logg = np.log10(grav.to(u.cm/u.s**2).value)*u.dex(u.cm/u.s**2) # logg cgs
 
         # stellar properties
         ras = [] # deg

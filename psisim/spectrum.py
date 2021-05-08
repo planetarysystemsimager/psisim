@@ -21,7 +21,7 @@ try:
     import picaso
     from picaso import justdoit as jdi
 except ImportError:
-    pass
+    print("Tried importing picaso, but couldn't do it")
 
 psisim_path = os.path.dirname(psisim.__file__)
 
@@ -53,7 +53,7 @@ def load_picaso_opacity(dbname=None,wave_range=None):
     # opacity_folder = os.path.join(os.getenv("picaso_refdata"),'opacities')
     
     # dbname = os.path.join(opacity_folder,dbname)
-    
+    print("Loading an opacity file from {}".format(dbname)) 
     return jdi.opannection(filename_db=dbname,wave_range=wave_range)
 
 

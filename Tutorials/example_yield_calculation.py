@@ -11,7 +11,7 @@ import astropy.units as u
 ### Set up the telescope and observing mode ###
 tmt = telescope.TMT()
 psi_blue = instrument.PSI_Blue()
-psi_blue.set_observing_mode(3600,10,'z',50, np.linspace(0.60,0.85,40)*u.micron) #60s, 40 exposures,z-band, R of 10
+psi_blue.set_observing_mode(3600*u.s,10,'z',50, np.linspace(0.60,0.85,40)*u.micron) #60s, 40 exposures,z-band, R of 10
 
 ### Generate the universe using EXOSIMS ###
 exosims_config_filename = "default_PSISIM_EXOSIMS_universe.json" #Some filename here
@@ -57,14 +57,15 @@ model_wvs = np.linspace(model_wv_low, model_wv_high, n_model_wv) #Choose some wa
 print("\n Starting to generate planet spectra")
 
 #Load in the PICASO opacities
-opacities = spectrum.load_picaso_opacity()
+opacity_file = None
+opacities = spectrum.load_picaso_opacity(dbname=opacity_file)
 
 def generate_spectrum(planet):
     """
     Function to loop over to generate spectra. 
     """
     #INSERT PLANET SELECTION RULES HERE
-    if planet["PlanetMass"] <= 17: #Planet masses in Earth Masses
+    if planet["PlanetMass"] <= 17*u.earthMass: #Planet masses in Earth Masses
         #If Neptune or less, we'll just use the Exosims Flux Ratio for now at all wavelengths. 
         #Later this will also use PICASO once we learn how to use it better
         planet_type = "Exosims"

@@ -83,7 +83,7 @@ class Instrument():
         '''
         pass
 
-    def get_instrument_background(self,wvs):
+    def get_instrument_background(self,wvs,solidangle):
         '''
         Return the instrument background at a given set of wavelengths
 
