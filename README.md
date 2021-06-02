@@ -1,6 +1,6 @@
 # PSI Simulator Tool
 
-Tool for the Planet Systems Imager to simulate the universe, generate planet spectra, evaulate instrument performance, and determine how well PSI can do science.
+Tool for the Planet Systems Imager to simulate the universe, generate planet spectra, evaulate instrument performance, and determine how well PSI can do science.  The framework is intended to be flexible enough to enable similar analyses for other instruments.
 
 Features of `psisim`:
 
