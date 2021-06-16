@@ -20,6 +20,8 @@ Pull this repository:
 ```
 > git clone https://github.com/planetarysystemsimager/psisim.git
 ```
+*If you have a new OSX installation you may need to download and install xcode.*
+
 Move into that directory and run the following to pip install `psisim` and its dependencies:
 ```
 > pip install -e .
