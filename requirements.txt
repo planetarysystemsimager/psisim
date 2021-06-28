@@ -1,0 +1,8 @@
+astropy
+numpy
+scipy
+matplotlib
+pysynphot
+pyvo
+speclite
+PyAstronomy
