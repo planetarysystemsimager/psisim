@@ -11,8 +11,6 @@ import copy
 from scipy.ndimage.interpolation import shift
 from scipy.ndimage import gaussian_filter
 import warnings
-import speclite.filters
-import math
 
 try: 
     import pysynphot as ps
@@ -391,7 +389,7 @@ def downsample_spectrum(spectrum,R_in, R_out):
 
     return new_spectrum
 
-def get_stellar_spectrum(planet_table_entry,wvs,R,model='Speclite_H_mag',verbose=False,user_params = None,doppler_shift=False,broaden=False,delta_wv=None):
+def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbose=False,user_params = None,doppler_shift=False,broaden=False,delta_wv=None):
     ''' 
     A function that returns the stellar spectrum for a given spectral type
 
@@ -426,7 +424,7 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Speclite_H_mag',verbose
         #If wvs is a float then make it a list for the for loop
         if isinstance(wvs,float):
             wvs = [wvs]
-            
+
         #Now get the spectrum!
         for wv in wvs: 
             #Wavelength sampling of the pickles models is at 5 angstrom
@@ -435,8 +433,8 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Speclite_H_mag',verbose
             ds = downsample_spectrum(full_stellar_spectrum,R_in,R)
             #Interpolate the spectrum to the wavelength we want
             stellar_spectrum.append(si.interp1d(sp.wave,ds)(wv))
-        stellar_spectrum = np.array(stellar_spectrum)*u.ph/u.s/u.cm**2/u.AA
-        
+        stellar_spectrum = np.array(stellar_spectrum)
+    
     elif model == 'Castelli-Kurucz':
         # For now we're assuming a metallicity of 0, because exosims doesn't
         # provide anything different
@@ -452,7 +450,7 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Speclite_H_mag',verbose
 
         # Get the Castelli-Kurucz models  
         sp = get_castelli_kurucz_spectrum(star_Teff, 0., star_logG)
-        
+
         # The flux normalization in pysynphot are all over the place, but it allows
         # you to renormalize, so we will do that here. We'll normalize to the Vmag 
         # of the star, assuming Johnsons filters
@@ -633,74 +631,10 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Speclite_H_mag',verbose
         #Now scasle the spectrum so that it has the appropriate vegamagnitude
         #(with an internal AB mag)
         stellar_spectrum = scale_spectrum_to_ABmag(wvs,stellar_spectrum,new_ABmag,instrument_filter,filters)
-        
-    elif model == 'COND+BTSettle_Broadband':
-    
-        planet_age = planet_table_entry['Age'].value/1000
-        planet_mass = planet_table_entry['PlanetMass'].to(u.Msun).value
-        interp_age_mass = [planet_age,planet_mass] # Known age and mass of planet
 
-        if planet_age < 0.001 or planet_age > 12.0 or planet_mass < 0.0005 or planet_mass > 1.4:
-#             warnings.warn("Age or mass input is out of the data range used for interpolation. Extrapolation using nearest data point.")
-            method = 'nearest'
-        else:
-            method = 'linear'
-        # COND_data is age, mass, effective temperature data
-        COND_data = np.loadtxt("COND.dat",skiprows=1,dtype = float)
-        age_mass = COND_data[:,0:2].tolist() # Age and mass data we will use to make interpolation function
-        teff = COND_data[:,2].tolist() # Effective temperature we will use to make interpolation function
-        logg = COND_data[:,4].tolist() # log(g) we will use to make interpolation function
-
-        interp_teff = si.griddata(age_mass,teff,interp_age_mass,method).tolist() 
-        interp_logg = si.griddata(age_mass,logg,interp_age_mass,method).tolist()
-        interp_teff_logg = interp_teff + interp_logg # Interpolated effective temperature and log(g) of star
-
-        if interp_teff[0] < 260.0 or interp_teff[0] > 7000.0 or interp_logg[0] < 0.0 or interp_logg[0] > 6.0:
-#             warnings.warn("Age or mass input is out of the data range used for interpolation. Extrapolation using nearest data point.")
-            method = 'nearest'
-        else:
-            method = 'linear'
-        #BT_Settle_data is effective temperature, log(g) and J, H, Ks, Lp, and Mp band magnitude data we will use to interpolate band magnitudes
-        BT_Settle_data = np.loadtxt("BT-Settle.dat",skiprows=20,dtype = float)
-        teff_logg = BT_Settle_data[:,0:2].tolist()
-        J_mag = BT_Settle_data[:,4].tolist()
-        H_mag = BT_Settle_data[:,5].tolist()
-        Ks_mag = BT_Settle_data[:,6].tolist()
-        Lp_mag = BT_Settle_data[:,7].tolist()
-        Mp_mag = BT_Settle_data[:,8].tolist()
-        for i in range(len(wvs)):
-            if   wvs[i] > (11481.78*u.AA).to(u.micron) and wvs[i] < (13494.41*u.AA).to(u.micron):
-                filter_mag = J_mag
-            elif wvs[i] > (14509.80*u.AA).to(u.micron) and wvs[i] < (18091.05*u.AA).to(u.micron):
-                filter_mag = H_mag
-            elif wvs[i] > (19501.89*u.AA).to(u.micron) and wvs[i] < (23377.11*u.AA).to(u.micron):
-                filter_mag = Ks_mag
-            elif wvs[i] > (33056.80*u.AA).to(u.micron) and wvs[i] < (42253.79*u.AA).to(u.micron):
-                filter_mag = Lp_mag
-            elif wvs[i] > (45086.25*u.AA).to(u.micron) and wvs[i] < (48872.39*u.AA).to(u.micron):
-                filter_mag = Mp_mag
-            else:
-                raise ValueError('Choose wavelength within one of the filter ranges')
-            mag_at_surface = si.griddata(teff_logg,filter_mag,interp_teff_logg,method).tolist()
-            star_radius = math.sqrt(((6.67e-11*u.m**3/(u.kg*u.s**2))*planet_table_entry['PlanetMass']/(10**interp_logg[0]*u.cm/u.s**2)).to(u.pc**2).value)
-            absolute_mag = [mag_at_surface[0]-math.log10(star_radius**5)+5]
-            apparent_mag = [absolute_mag[0] + math.log10(planet_table_entry['Distance'].value**5) - 5]
-        stellar_spectrum = []
-        for j in range(len(apparent_mag)):
-            flux = speclite.filters.ab_reference_flux(wvs[j], apparent_mag[j])
-            flux = flux.to(u.ph/u.AA/u.cm**2/u.s,equivalencies=u.spectral_density(wvs[0]))  
-            stellar_spectrum += [flux.value]
-        stellar_spectrum *= flux.unit
-        
-    elif model == 'Speclite_H_mag':
-        apparent_mag = planet_table_entry['StarHmag']
-#         apparent_mag = H_mag + math.log10(planet_table_entry['Distance'].value**5) - 5
-        flux = speclite.filters.ab_reference_flux(wvs, apparent_mag)
-        flux = flux.to(u.ph/u.AA/u.cm**2/u.s,equivalencies=u.spectral_density(wvs))  
-        stellar_spectrum = flux
     else:
         if verbose:
-            print("We only support 'pickles', 'Castelli-Kurucz', 'Phoenix', 'Sonora', 'COND+BTSettle_Broadband', and 'Speclite_H_mag' models for now")
+            print("We only support 'pickles', 'Castelli-Kurucz', 'Phoenix' and 'Sonora' models for now")
         return -1
 
     ## Apply a doppler shift if you'd like.
@@ -722,7 +656,7 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Speclite_H_mag',verbose
             stellar_spectrum = rotationally_broaden(wvs,stellar_spectrum,planet_table_entry['StarLimbDarkening'],planet_table_entry['StarVsini'])
         else:
             raise KeyError("The StarVsini key is missing from your target table. It is needed for a doppler shift. ")
-    
+
     return stellar_spectrum
 
 def get_pickles_spectrum(spt,verbose=False):
@@ -907,6 +841,7 @@ def scale_spectrum_to_ABmag(wave_u,obj_spec_interp_u,obj_mag,obj_filt,filters):
     spectrum -  An array of spectrum, in units photons/s/cm^2/A, assumed to have a magnitude of ___ 
     obj_mag   - The magnitude that we're scaling to in AB mag
     '''
+    import speclite.filters
     this_filter = speclite.filters.load_filters(obj_filt)
     # import pdb; pdb.set_trace()
     obj_model_mag = this_filter.get_ab_magnitudes(obj_spec_interp_u.to(u.erg/u.m**2/u.s/u.Angstrom,equivalencies=u.spectral_density(wave_u)), wave_u.to(u.Angstrom))[obj_filt]
@@ -946,6 +881,7 @@ def get_obj_ABmag(wavelengths,spec,filter_name,filters):
     obj_mag - The object magniude in vega mags in the "obj_filter" filter 
     obj_filter - The filter that the magnitude is given in
     '''
+    import speclite.filters
     if filter_name not in filters.names:
         raise ValueError("Your requested filter of {} is not in our filter list: {}".format(filter_name,filters.names))
     
@@ -958,6 +894,7 @@ def load_filters(path=psisim_path+"/data/filter_profiles/"):
     '''
     Load up some filter profiles and put them into speclite
     '''
+    import speclite.filters
     CFHT_Y_data = np.genfromtxt(path+'CFHT_y.txt', skip_header=0)
     J_2MASS_data = np.genfromtxt(path+'2MASS_J.txt', skip_header=0)
     H_2MASS_data = np.genfromtxt(path+'2MASS_H.txt', skip_header=0)
