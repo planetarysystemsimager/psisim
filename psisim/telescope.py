@@ -34,7 +34,7 @@ class Telescope():
         else: 
             self.collecting_area = np.pi*(self.diameter/2)**2
 
-    def get_sky_background(self,wvs):
+    def get_sky_background(self,wvs,R):
         '''
         A function that returns the sky background for a given set of wavelengths. 
 
@@ -48,16 +48,16 @@ class Telescope():
         '''
         
         if isinstance(wvs,float):
-            return 0
+            return 0*(u.ph/(u.s*u.cm**2*u.AA))
         else:
-            return np.zeros(len(wvs))
+            return np.zeros(len(wvs))*(u.ph/(u.s*u.cm**2*u.AA))
 
-    def get_telescope_emission(self,wvs):
+    def get_thermal_emission(self,wvs,band):
         '''
         Returns the telescope emission
         '''
 
-        return np.ones(np.shape(wvs))
+        return np.zeros(np.shape(wvs))*(u.ph/(u.s*u.cm**2*u.AA))
 
     def get_telescope_emissivity(self,wvs):
         '''
@@ -88,7 +88,11 @@ class Telescope():
             return 1
         else:
             return np.ones(len(wvs))
-
+    def get_telescope_throughput(self,wvs,band):
+        throughput = np.ones(np.shape(wvs))
+        return throughput
+    
+    
 class TMT(Telescope):
     '''
     An implementation of the Telescope class
@@ -345,7 +349,20 @@ class Keck(Telescope):
         thermal_emission *= self.get_telescope_emissivity(wvs,band=band)
 
         return thermal_emission
-        
-
-
     
+    
+class GeminiSouth(Telescope):
+    '''
+    An implementation of the Telescope class
+    '''
+    def __init__(self,airmass = 1.0,water_vapor=  1.0,path=None):
+        super(GeminiSouth, self).__init__(7.7)
+
+        self.temperature = 276 * u.K
+        self.median_seeing = 0.7 * u.arcsec #https://arxiv.org/abs/0809.3017
+        self.airmass = airmass
+        self.water_vapor = water_vapor
+
+        self.path = path #A path to background, transmission and AO files
+    
+   
