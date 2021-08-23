@@ -17,7 +17,6 @@ try:
 except ImportError:
     pass
 
-
 class Spectrum():
     '''
     A class for spectra manipulation
@@ -45,15 +44,16 @@ class Spectrum():
 
         return
 
-    def downsample_spectrum(self,R_out):
+    def downsample_spectrum(self,R_out,new_wvs=None):
         '''
         Downsample a spectrum from one resolving power to another
 
         Inputs: 
         R_out	 - The desired resolving power of the output spectrum
+	    (optional) new_wvs - specify wavelength grid to interpolate downsampled spectrum to
 
         Outputs:
-        new_spectrum - The original spectrum, but now downsampled
+        new_spectrum - The original spectrum, but now downsampled (and optionally interpolated)
         '''
         fwhm = self.R/R_out
         sigma = fwhm/(2*np.sqrt(2*np.log(2)))
@@ -61,6 +61,10 @@ class Spectrum():
             new_spectrum = ndi.gaussian_filter(self.spectrum, sigma)
         else:
             new_spectrum = ndi.gaussian_filter(self.spectrum, sigma.value)
+
+        if new_wvs is not None:
+            new_spectrum = np.interp(new_wvs, self.wvs, new_spectrum)
+            self.wvs = new_wvs
 
         self.spectrum = new_spectrum
         self.R = R_out
@@ -337,30 +341,21 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
             wrn = "The requested resolution (%0.2f) is higher than the opacity model resolution (%0.2f)."%(R,np.mean(model_R))
             wrn += " This is strongly discouraged as we'll be upsampling the spectrum."
             warnings.warn(wrn)
+
+        # model_wvs is reversed so re-sort it and then extract requested wavelengths
+        argsort = np.argsort(model_wvs)
+        lowres_ref_spec = Spectrum(model_wvs[argsort], fpfs_reflected[argsort], np.mean(model_R))
+        lowres_therm_spec = Spectrum(model_wvs[argsort], fp_thermal[argsort], np.mean(model_R))
         
-        lowres_fpfs_ref = downsample_spectrum(fpfs_reflected, np.mean(model_R), R)
-        lowres_fp_therm = downsample_spectrum(fp_thermal, np.mean(model_R), R)
+        fpfs_ref = lowres_ref_spec.downsample_spectrum(R, new_wvs=wvs)
+        fp_therm = lowres_therm_spec.downsample_spectrum(R, new_wvs=wvs)
 
         highres_fp_reflected =  model_alb * (planet_table_entry['PlanetRadius']*u.earthRad.to(u.au)/planet_table_entry['SMA'])**2 # flux ratio relative to host star
         highres_fp = highres_fp_reflected + fp_thermal
-
-        spec = Spectrum(wvs, highres_fp, np.mean(model_R))
-
-        lowres_fp = spec.downsample_spectrum(R)
-
-
-        # model_wvs is reversed so re-sort it and then extract requested wavelengths
-
-        argsort = np.argsort(model_wvs)
-        fpfs_ref = np.interp(wvs, model_wvs[argsort], lowres_fpfs_ref[argsort])
-        fp_therm = np.interp(wvs, model_wvs[argsort], lowres_fp_therm[argsort])
         
         # fp_therm comes in with units of ergs/s/cm^3, convert to ph/s/cm^2/Angstrom
         fp_therm = fp_therm * u.erg/u.s/u.cm**2/u.cm
         fp_therm = fp_therm.to(u.ph/u.s/u.cm**2/u.AA,equivalencies=u.spectral_density(wvs))
-
-        fp = np.interp(wvs, model_wvs[argsort], lowres_fp[argsort])
-        spec.spectrum = fp
 
         return fpfs_ref,fp_therm,df
 
@@ -412,12 +407,12 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
         planet_polarization_fraction = interp_peak_pol*rayleigh_curve
         highres_planet_polarized_intensity = highres_fpfs*planet_polarization_fraction
 
+        argsort = np.argsort(model_wvs)
+        spec = Spectrum(model_wvs[argsort], highres_fpfs[argsort], np.mean(model_R))
+        spec_pol = Spectrum(model_wvs[argsort], highres_planet_polarized_intensity[argsort], np.mean(model_R))
 
-        spec = Spectrum(wvs, highres_fp, np.mean(model_R))
-        spec_pol = Spectrum(wvs, highres_planet_polarized_intensity, np.mean(model_R))
-
-        lowres_fp = spec.downsample_spectrum(R)
-        lowres_pol = spec_pol.downsample_spectrum(R)
+        fpfs = spec.downsample_spectrum(R,new_wvs=wvs)
+        pol = spec_pol.downsample_spectrum(R,new_wvs=wvs)
 
         # Make sure that model resolution is higher than requested resolution
         if R > np.mean(model_R):
@@ -425,13 +420,6 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
             wrn += " This is strongly discouraged as we'll be upsampling the spectrum."
             warnings.warn(wrn)
         
-        lowres_fpfs = downsample_spectrum(highres_fpfs, np.mean(model_R), R)
-        lowres_pol = downsample_spectrum(highres_planet_polarized_intensity, np.mean(model_R), R)
-
-        argsort = np.argsort(model_wvs)
-
-        fpfs = np.interp(wvs, model_wvs[argsort], lowres_fpfs[argsort])
-        pol = np.interp(wvs, model_wvs[argsort], lowres_pol[argsort])
         spec.spectrum = fp
         spec_pol.spectrum = pol
 
@@ -552,24 +540,19 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         scaling_factor = 10**(starVmag/-2.5)
         full_stellar_spectrum = sp.flux*scaling_factor
 
-        stellar_spectrum = []
-
         #If wvs is a float then make it a list for the for loop
         if isinstance(wvs,float):
             wvs = [wvs]
 
         # Initialize Spectrum class
-        spec = Spectrum(wvs, full_stellar_spectrum, R) # This R is not correct until downsample spectrum is applied
+        spec = Spectrum(sp.wave, full_stellar_spectrum, R) # This R is not correct until downsample spectrum is applied
 
         #Now get the spectrum!
         for wv in wvs: 
             #Wavelength sampling of the pickles models is at 5 angstrom
             spec.R = wv/0.0005
-            #Down-sample the spectrum to the desired wavelength
-            ds = spec.downsample_spectrum(R)
-            #Interpolate the spectrum to the wavelength we want
-            stellar_spectrum.append(si.interp1d(sp.wave,ds)(wv))
-        stellar_spectrum = np.array(stellar_spectrum)
+            #Down-sample the spectrum to the desired wavelength and interpolate
+            spec.downsample_spectrum(R,new_wvs=wvs)
     
     elif model == 'Castelli-Kurucz':
         # For now we're assuming a metallicity of 0, because exosims doesn't
@@ -596,14 +579,12 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         sp_norm.convert("Micron")
         sp_norm.convert("photlam")
 
-        stellar_spectrum = []
-
         #If wvs is a float then make it a list for the for loop
         if isinstance(wvs,float):
             wvs = [wvs]
 
         # Initialize Spectrum class
-        spec = Spectrum(wvs, sp_norm.flux, R) # This R is not correct until downsample spectrum is applied
+        spec = Spectrum(sp_norm.wave, sp_norm.flux, R) # This R is not correct until downsample spectrum is applied
 
         #Now get the spectrum!
         for wv in wvs: 
@@ -616,12 +597,8 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
             dwv = dwvs[ind]
 
             spec.R = wv/dwv
-            #Down-sample the spectrum to the desired wavelength
-            ds = spec.downsample_spectrum(R)
-            #Interpolate the spectrum to the wavelength we want
-            stellar_spectrum.append(si.interp1d(sp_norm.wave,ds)(wv))
-        
-        stellar_spectrum = np.array(stellar_spectrum)        
+            #Down-sample the spectrum to the desired wavelength and interpolate
+            spec.downsample_spectrum(R,new_wvs=wvs) 
 
     elif model == 'Phoenix':
         
@@ -653,9 +630,6 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
 
         spec_u = spec.scale_spectrum_to_vegamag(star_mag,star_filter,filters)
         new_ABmag = get_obj_ABmag(wave_u,spec_u,instrument_filter,filters)
-
-        #This loop may be very slow for a hi-res spectrum....
-        stellar_spectrum = np.zeros(np.shape(wvs))
         
         #Get the wavelength sampling of the stellar spectrum
         dwvs = wave_u - np.roll(wave_u, 1)
@@ -665,13 +639,12 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         spec.R = mean_R_in
 
         if R < mean_R_in:
-            ds = spec.downsample_spectrum(R)
+            spec.downsample_spectrum(R,new_wvs=wvs)
         else:
             if verbose:
                 print("Your requested Resolving power is greater than or equal to the native model. We're not upsampling here, but we should.")
-            ds = spec_u
-        # ds = spec_u
-        stellar_spectrum = np.interp(wvs,wave_u,ds)
+            spec.spectrum = np.interp(wvs,wave_u,spec_u)
+            spec.wvs = wvs
 
         #Now get the spectrum at the wavelengths that we want
         # stellar_spectrum = []
@@ -700,14 +673,12 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         #     stellar_spectrum[i] = np.interp(wv,wave_u,ds)
         #     # stellar_spectrum.append(si.interp1d(wave_u,ds)(wv))
 
-        stellar_spectrum *= spec_u.unit
-        spec.spectrum = stellar_spectrum
-        spec.wvs = wvs
+        spec.spectrum = spec.spectrum * spec_u.unit
 
         #Now scasle the spectrum so that it has the appropriate vegamagnitude
         #(with an internal AB mag)
         
-        stellar_spectrum = spec.scale_spectrum_to_ABmag(new_ABmag,instrument_filter,filters)
+        spec.scale_spectrum_to_ABmag(new_ABmag,instrument_filter,filters)
 
     elif model == 'Sonora':
         
@@ -736,13 +707,12 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         spec.R = mean_R_in
 
         if R < mean_R_in:
-            ds = spec.downsample_spectrum(R)
+            ds = spec.downsample_spectrum(R,new_wvs=wvs)
         else:
             if verbose:
                 print("Your requested Resolving power is greater than or equal to the native model. We're not upsampling here, but we should.")
-            ds = spec_u
-        # ds = spec_u
-        stellar_spectrum = np.interp(wvs,wave_u,ds)
+            spec.spectrum = np.interp(wvs,wave_u,spec_u)
+            spec.wvs = wvs
         
         #Now get the spectrum at the wavelengths that we want
         # stellar_spectrum = np.zeros(np.shape(wvs))
@@ -773,26 +743,22 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         #     stellar_spectrum[i] = np.interp(wv,wave_u,ds)
         #     # stellar_spectrum.append(si.interp1d(wave_u,ds)(wv))
 
-        stellar_spectrum *= spec_u.unit
-        spec.spectrum = stellar_spectrum
-        spec.wvs = wvs
+        spec.spectrum = spec.spectrum * spec_u.unit
         #Now scasle the spectrum so that it has the appropriate vegamagnitude
         #(with an internal AB mag)
-        stellar_spectrum = spec.scale_spectrum_to_ABmag(new_ABmag,instrument_filter,filters)
+        spec.scale_spectrum_to_ABmag(new_ABmag,instrument_filter,filters)
 
     else:
         if verbose:
             print("We only support 'pickles', 'Castelli-Kurucz', 'Phoenix' and 'Sonora' models for now")
         return -1
 
-    spec.spectrum = stellar_spectrum
-
     ## Apply a doppler shift if you'd like.
     if doppler_shift:
         if delta_wv is not None:
             if "StarRadialVelocity" in planet_table_entry.keys():
                 
-                stellar_spectrum = spec.apply_doppler_shift(delta_wv,planet_table_entry['StarRadialVelocity'])
+                spec.apply_doppler_shift(delta_wv,planet_table_entry['StarRadialVelocity'])
 
             else:
                 raise KeyError("The StarRadialVelocity key is missing from your target table. It is needed for a doppler shift. ")
@@ -803,7 +769,7 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
     ## Rotationally broaden if you'd like
     if broaden:
         if ("StarVsini" in planet_table_entry.keys()) and ("StarLimbDarkening" in planet_table_entry.keys()):
-            stellar_spectrum = spec.rotationally_broaden(planet_table_entry['StarLimbDarkening'],planet_table_entry['StarVsini'])
+            spec.rotationally_broaden(planet_table_entry['StarLimbDarkening'],planet_table_entry['StarVsini'])
         else:
             raise KeyError("The StarVsini key is missing from your target table. It is needed for a doppler shift. ")
 
@@ -1065,7 +1031,7 @@ def get_model_ABmags(planet_table_entry,filter_name_list, model='Phoenix',verbos
         spec = Spectrum(wave_u, spec_u, None) # R is none since it doesn't matter for the needed function
         #Now scasle the spectrum so that it has the appropriate vegamagnitude
         #(with an internal AB mag)
-        stellar_spectrum = spec.scale_spectrum_to_vegamag(star_mag,star_filter,filters)
+        spec.scale_spectrum_to_vegamag(star_mag,star_filter,filters)
 
     elif model == 'Sonora':
         
@@ -1083,10 +1049,10 @@ def get_model_ABmags(planet_table_entry,filter_name_list, model='Phoenix',verbos
         spec = Spectrum(wave_u, spec_u, None) # R is none since it doesn't matter for the needed function
         #Now scale the spectrum so that it has the appropriate vegamagnitude
         #(with an internal AB mag)
-        stellar_spectrum = spec.scale_spectrum_to_vegamag(star_mag,star_filter,filters)
+        spec.scale_spectrum_to_vegamag(star_mag,star_filter,filters)
 
 
-    mags = filters.get_ab_magnitudes(stellar_spectrum.to(u.erg/u.m**2/u.s/u.Angstrom,equivalencies=u.spectral_density(wave_u)),wave_u.to(u.Angstrom))
+    mags = filters.get_ab_magnitudes(spec.spectrum.to(u.erg/u.m**2/u.s/u.Angstrom,equivalencies=u.spectral_density(wave_u)),wave_u.to(u.Angstrom))
 
     mag_list = []
     for filter_name in filter_name_list:

@@ -130,7 +130,8 @@ class TMT(Telescope):
         sky_background = si.interp1d(sky_background_MK_wave.to(u.micron).value,sky_background_MK,bounds_error=False,fill_value='extrapolate')(wvs)*u.photon/(u.s*u.arcsec**2*u.nm*u.m**2)
 
         if R < 1e5:
-            sky_background = spectrum.downsample_spectrum(sky_background,1e5,R)*sky_background.unit
+            tmp_spec = spectrum.Spectrum(wvs, sky_background, 1e5)
+            sky_background = tmp_spec.downsample_spectrum(R) * sky_background.unit
 
         #Multiply by the solid angle
         sky_background *= solidangle
@@ -157,7 +158,8 @@ class TMT(Telescope):
         sky_trans_interp = si.interp1d(sky_trans_wave,sky_trans,bounds_error=False,fill_value='extrapolate')(wave)
 
         if R < 1e5:
-            sky_trans_interp = spectrum.downsample_spectrum(sky_trans_interp,1e5,R)
+            tmp_spec = spectrum.Spectrum(wave, sky_trans_interp, 1e5)
+            sky_trans_interp = tmp_spec.downsample_spectrum(R)
 
         return sky_trans_interp
 
@@ -259,7 +261,8 @@ class Keck(Telescope):
         sky_background = si.interp1d(sky_background_MK_wave.to(u.micron).value,sky_background_MK,bounds_error=False,fill_value='extrapolate')(wvs)*u.photon/(u.s*u.arcsec**2*u.nm*u.m**2)
 
         if R < 1e5:
-            sky_background = spectrum.downsample_spectrum(sky_background,1e5,R)*sky_background.unit
+            tmp_spec = spectrum.Spectrum(wvs, sky_background, 1e5)
+            sky_background = tmp_spec.downsample_spectrum(R) * sky_background.unit
 
         #Multiply by the solid angle
         sky_background *= solidangle
@@ -286,7 +289,8 @@ class Keck(Telescope):
         sky_trans_interp = si.interp1d(sky_trans_wave,sky_trans,bounds_error=False,fill_value='extrapolate')(wave)
 
         if R < 1e5:
-            sky_trans_interp = spectrum.downsample_spectrum(sky_trans_interp,1e5,R)
+            tmp_spec = spectrum.Spectrum(wave, sky_trans_interp, 1e5)
+            sky_trans_interp = tmp_spec.downsample_spectrum(R)
 
         return sky_trans_interp
 

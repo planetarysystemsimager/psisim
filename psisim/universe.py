@@ -3,6 +3,9 @@ import astropy.units as u
 import astropy.constants as constants
 from astropy.table import QTable, MaskedColumn
 import scipy.interpolate as si
+import pyvo
+import json
+
 
 class Universe():
     '''
@@ -282,7 +285,6 @@ class ExoArchive_Universe(Universe):
                 NArx_table[col].fill_value = ""
                 # print("column {} has no fill_value".format(col))
 
-        
         #-- Add new columns for values not easily available or computable from table
           # TODO: for now, these are masked but we should find a good way to populate them
         NArx_table.add_columns([MaskedColumn(length=len(NArx_table),mask=True,fill_value=np.nan)]*3,
