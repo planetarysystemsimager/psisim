@@ -3,7 +3,9 @@ import scipy.interpolate as si
 import astropy.units as u
 import astropy.constants as constants
 from astropy.modeling.blackbody import blackbody_lambda, blackbody_nu
+from psisim import datadir
 from psisim import spectrum
+import psisim.nair as nair
 
 class Telescope():
     '''
@@ -19,6 +21,16 @@ class Telescope():
     get_sky_background()    - A function to get the sky background
     get_atmospheric_transmission()    - A function to get the atmospheric transmission
 
+    Args:
+        diameter (float), diameter of the float in meters
+        collecting_area (float, optiona): collecting area in m^2, for non-circular mirrors
+
+    Attributes:
+        diameter (astropy.units.Quantity): diameter of the telescope in meters
+        collecting area (astropy.units.Quantity): collecting area of mirror in meters^2
+        temperature (astropy.units.Quantity): temperature of air at telescope in Kelvin
+        pressure (astropy.units.Quantity): pressure of air at telescope in Pa
+        relative_humidity (float): relative humidity of air at telescope in % between 0 and 100       
     '''
     def __init__(self,diameter, collecting_area=None):
         '''
@@ -30,9 +42,14 @@ class Telescope():
 
         #If no collecting area is passed, be naive and assume it's a full circular mirror
         if collecting_area is not None:
-            self.collecting_area = collecting_area
+            self.collecting_area = collecting_area * u.m**2
         else: 
             self.collecting_area = np.pi*(self.diameter/2)**2
+
+        # set some default environment conditions
+        self.temperature = 276 * u.K
+        self.pressure = 61400 * u.Pa
+        self.relative_humidity = 20 # percent
 
     def get_sky_background(self,wvs):
         '''
@@ -89,11 +106,24 @@ class Telescope():
         else:
             return np.ones(len(wvs))
 
+    
+    def get_nair(self, wvs):
+        """
+        Compute the index of refraction of air
+
+        Args:
+            wvs (np.array of float): wvs in microns to compute index of refraction of air
+        """
+        n = nair.nMathar(wvs, self.pressure.value, self.temperature.value, self.relative_humidity)
+
+        return n
+
+
 class TMT(Telescope):
     '''
     An implementation of the Telescope class
     '''
-    def __init__(self,airmass = 1.0,water_vapor=  1.0,path="/scr3/dmawet/ETC/"):
+    def __init__(self,airmass = 1.0,water_vapor=  1.0,path=None):
         super(TMT, self).__init__(30)
 
         self.temperature = 276 * u.K
@@ -101,6 +131,8 @@ class TMT(Telescope):
         self.airmass = airmass
         self.water_vapor = water_vapor
 
+        if path is None:
+            path = datadir
         self.path = path #A path to background, transmission and AO files
 
     def get_sky_background(self, wvs, R=1e5):
@@ -218,7 +250,7 @@ class Keck(Telescope):
     '''
     An implementation of the Telescope class
     '''
-    def __init__(self,airmass = 1.0,water_vapor=  1.0,path="/scr3/dmawet/ETC/"):
+    def __init__(self,airmass = 1.0,water_vapor=  1.0, path=None):
         super(Keck, self).__init__(9.85)
 
         self.temperature = 276 * u.K
@@ -226,6 +258,8 @@ class Keck(Telescope):
         self.airmass = airmass
         self.water_vapor = water_vapor
 
+        if path is None:
+            path = datadir
         self.path = path #A path to background, transmission and AO files
 
         # Throughput data
