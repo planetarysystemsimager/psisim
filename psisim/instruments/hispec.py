@@ -84,6 +84,7 @@ class hispec(Instrument):
         self.current_dwvs = None
         self.ao_mag = None
         self.mode = None
+        self.zenith = None # in degrees
     
     def set_observing_mode(self,exposure_time,n_exposures,sci_filter,wvs,dwvs=None, mode="off-axis",zenith=0):
         '''
