@@ -4,20 +4,23 @@ import scipy.interpolate as si
 import numpy as np
 import astropy.units as u
 import astropy.constants as constants
+import astropy.io.ascii
 import pysynphot as ps
 import warnings
 from astropy.modeling.blackbody import blackbody_lambda, blackbody_nu
 from astropy.modeling.models import BlackBody
 
-import psisim
+from psisim import datadir
+import psisim.instrument
 from psisim.instruments.template import Instrument
+import psisim.nair as nair
 
 class kpic_phaseII(Instrument):
     '''
     An implementation of Instrument for KPIC Phase II
     '''
 
-    def __init__(self,telescope=None):
+    def __init__(self, telescope=None, use_adc=True):
         super(kpic_phaseII,self).__init__()
 
         try:
@@ -48,6 +51,11 @@ class kpic_phaseII(Instrument):
         self.th_data = np.genfromtxt(self.telescope.path+'/throughput/hispec_throughput_budget.csv',
                                     skip_header=1,usecols=np.arange(5,166),delimiter=',',missing_values='')
 
+        # load in fiber coupling efficiency as a function of misalignment
+        fiber_data_filename = os.path.join(datadir, "smf", "keck_pupil_charge0.csv")
+        self.fiber_coupling = astropy.io.ascii.read(fiber_data_filename, names=["sep", "eta"])
+        self.fiber_coupling['eta'] /= self.fiber_coupling['eta'][0] # normalize to peak, since this is just the relative term
+
         #AO parameters
         self.nactuators = 32. - 2.0 #The number of DM actuators in one direction
         self.fiber_contrast_gain = 10. #The gain in contrast thanks to the fiber. ('off-axis' mode only)
@@ -55,8 +63,6 @@ class kpic_phaseII(Instrument):
         self.ao_filter = 'TwoMASS-H' #Available AO filters - per Dimitri
         self.d_ao = 0.15 * u.m
         self.area_ao = np.pi*(self.d_ao/2)**2
-
-
         
         self.name = "Keck-KPIC-PhaseII"
         
@@ -66,6 +72,7 @@ class kpic_phaseII(Instrument):
 
         # self.lsf_width = 1.0/2.35 #The linespread function width in pixels (assuming Gaussian for now)
         
+        self.use_adc = use_adc
 
         # The current obseving properties - dynamic
         self.exposure_time = None
@@ -77,8 +84,9 @@ class kpic_phaseII(Instrument):
         self.mode = None
         self.vortex_charge = None      # for vfn only
         self.host_diameter= 0.*u.mas   # for vfn only (default 0 disables geometric leak.)
+        self.zenith = None # in degrees
     
-    def set_observing_mode(self,exposure_time,n_exposures,sci_filter,wvs,dwvs=None, mode="vfn", vortex_charge=None):
+    def set_observing_mode(self,exposure_time,n_exposures,sci_filter,wvs,dwvs=None, mode="vfn", vortex_charge=None, zenith=0):
         '''
         Sets the current observing setup
         '''
@@ -106,6 +114,8 @@ class kpic_phaseII(Instrument):
 
         #Set the line spread function width to be the 
         self.lsf_width = self.get_wavelength_bounds(sci_filter)[1]/self.current_R
+
+        self.zenith = zenith
         
     def set_current_filter(self,filter_name):
         '''
@@ -189,6 +199,8 @@ class kpic_phaseII(Instrument):
             #th_fcd = np.interp(wvs, th_wvs, th_data[30]) # Fiber Dynamic Coupling (need function to scale with Strehl/NGS, currently unused)
             th_fiber = np.interp(wvs, th_wvs, np.prod(th_data[31:35], axis=0)) # Fiber throughput (excluding fcd above. Also exclude prop., breakout, and second endface)
             th_fiber = th_fiber * 0.98 *  np.interp(wvs, th_wvs, th_data[37]) # Add in const. prop. loss (0.98) and second endface
+            th_fiber *= self.get_dar_coupling_throughput(self, wvs)
+
         th_feu = 0.89   #from Dimitri code
 
         if planet_flag:
@@ -491,3 +503,34 @@ class kpic_phaseII(Instrument):
         host_size_in_mas - (Astropy Quantity - u.mas) Angular diameter of the host star
         '''
         self.host_diameter = host_size_in_mas.to(u.arcsec)
+
+    
+    def get_dar_coupling_throughput(self, wvs, wvs0=None):
+        """
+        Gets the relative loss in fiber coupling due to DAR (normalized to 1)
+
+        Args:
+            wvs (np.array of float): wavelengths to consider
+            wvs0 (float, optiona): the reference wavelength where fiber coupling is maximized. 
+                                    Assumed to be the mean of the input wavelengths if not passed in
+
+        Returns:
+            np.array of float: the relative loss in throughput in fiber coupling due to DAR (normalized to 1)
+        """
+        if wvs0 is None:
+            wvs0 = np.mean(wvs)
+
+        # check whether we are using the ADC
+        if not self.use_adc:
+            n = self.telescope.get_nair(wvs)
+            n0 = self.telescope.get_nair(wvs0)
+
+            dar = np.abs(nair.compute_dar(n, n0, np.radians(self.zenith)))
+
+            lam_d = (wvs * u.um) / (self.telescope.diameter.to(u.um)) * 206265 * 1000
+
+            coupling_th = np.interp(dar/lam_d, self.fiber_coupling['sep'], self.fiber_coupling['eta'], right=0)
+        else:
+            coupling_th = 1.00 # assume perfect ADC
+
+        return coupling_th

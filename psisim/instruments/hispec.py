@@ -4,14 +4,16 @@ import scipy.interpolate as si
 import numpy as np
 import astropy.units as u
 import astropy.constants as constants
+import astropy.io.ascii
 import pysynphot as ps
 import warnings
 from astropy.modeling.blackbody import blackbody_lambda, blackbody_nu
 from astropy.modeling.models import BlackBody
 
-import psisim
+from psisim import datadir
+import psisim.telescope
 from psisim.instruments.template import Instrument
-
+import psisim.nair as nair
 
 filter_options = {"CFHT-Y":(0.940*u.micron,1.018*u.micron,1.090*u.micron),
                     "TwoMASS-J":(1.1*u.micron,1.248*u.micron,1.360*u.micron),
@@ -54,6 +56,11 @@ class hispec(Instrument):
         self.th_data = np.genfromtxt(self.telescope.path+'/throughput/hispec_throughput_budget.csv',
                                     skip_header=1,usecols=np.arange(5,166),delimiter=',',missing_values='')
 
+        # load in fiber coupling efficiency as a function of misalignment
+        fiber_data_filename = os.path.join(datadir, "smf", "keck_pupil_charge0.csv")
+        self.fiber_coupling = astropy.io.ascii.read(fiber_data_filename, names=["sep", "eta"])
+        self.fiber_coupling['eta'] /= self.fiber_coupling['eta'][0] # normalize to peak, since this is just the relative term
+
         #AO parameters
         self.nactuators = 32. - 2.0 #The number of DM actuators in one direction
         self.fiber_contrast_gain = 3. #The gain in congtrast thanks to the fiber. 
@@ -61,8 +68,6 @@ class hispec(Instrument):
         self.ao_filter = 'bessell-I' #Available AO filters
         self.d_ao = 0.15 * u.m
         self.area_ao = np.pi*(self.d_ao/2)**2
-
-
         
         self.name = "Keck-HISPEC"
         
@@ -70,7 +75,6 @@ class hispec(Instrument):
         self.filters = ['CFHT-Y','TwoMASS-J','TwoMASS-H','TwoMASS-K'] #Available observing filters
 
         # self.lsf_width = 1.0/2.35 #The linespread function width in pixels (assuming Gaussian for now)
-        
 
         # The current obseving properties - dynamic
         self.exposure_time = None
@@ -80,8 +84,9 @@ class hispec(Instrument):
         self.current_dwvs = None
         self.ao_mag = None
         self.mode = None
+        self.zenith = None # in degrees
     
-    def set_observing_mode(self,exposure_time,n_exposures,sci_filter,wvs,dwvs=None, mode="off-axis"):
+    def set_observing_mode(self,exposure_time,n_exposures,sci_filter,wvs,dwvs=None, mode="off-axis",zenith=0):
         '''
         Sets the current observing setup
         '''
@@ -109,6 +114,8 @@ class hispec(Instrument):
 
         #Set the line spread function with to be the 
         self.lsf_width = self.get_wavelength_bounds(sci_filter)[1]/self.current_R
+
+        self.zenith = zenith
         
     def set_current_filter(self,filter_name):
         '''
@@ -171,6 +178,7 @@ class hispec(Instrument):
         th_fiu = np.interp(wvs, th_wvs, np.prod(th_data[14:29], axis=0)) # KPIC throughput
         #th_fcd = np.interp(wvs, th_wvs, th_data[30]) # Fiber Dynamic Coupling (need function to scale with Strehl/NGS, currently unused)
         th_fiber = np.interp(wvs, th_wvs, np.prod(th_data[31:38], axis=0)) # Fiber throughput (excluding fcd above)
+        th_fiber *= self.get_dar_coupling_throughput(self, wvs)
         th_spec = np.interp(wvs, th_wvs, np.prod(th_data[39:51], axis=0)) # HISPEC - SPEC throughput
 
         if planet_flag:
@@ -404,3 +412,29 @@ class hispec(Instrument):
         th_planet = 1 * np.ones([np.size(separations), np.size(wvs)]) 
         
         return th_planet
+
+    def get_dar_coupling_throughput(self, wvs, wvs0=None):
+        """
+        Gets the relative loss in fiber coupling due to DAR (normalized to 1)
+
+        Args:
+            wvs (np.array of float): wavelengths to consider
+            wvs0 (float, optiona): the reference wavelength where fiber coupling is maximized. 
+                                    Assumed to be the mean of the input wavelengths if not passed in
+
+        Returns:
+            np.array of float: the relative loss in throughput in fiber coupling due to DAR (normalized to 1)
+        """
+        if wvs0 is None:
+            wvs0 = np.mean(wvs)
+
+        n = self.telescope.get_nair(wvs)
+        n0 = self.telescope.get_nair(wvs0)
+
+        dar = np.abs(nair.compute_dar(n, n0, np.radians(self.zenith)))
+
+        lam_d = (wvs * u.um) / (self.telescope.diameter.to(u.um)) * 206265 * 1000
+
+        coupling_th = np.interp(dar/lam_d, self.fiber_coupling['sep'], self.fiber_coupling['eta'], right=0)
+
+        return coupling_th
