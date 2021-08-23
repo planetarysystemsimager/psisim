@@ -17,7 +17,7 @@ try:
 except ImportError:
     pass
 
-<<<<<<< HEAD
+
 class Spectrum():
     '''
     A class for spectra manipulation
@@ -425,6 +425,8 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
             wrn += " This is strongly discouraged as we'll be upsampling the spectrum."
             warnings.warn(wrn)
         
+        lowres_fpfs = downsample_spectrum(highres_fpfs, np.mean(model_R), R)
+        lowres_pol = downsample_spectrum(highres_planet_polarized_intensity, np.mean(model_R), R)
 
         argsort = np.argsort(model_wvs)
 
