@@ -155,7 +155,7 @@ try:
     import picaso
     from picaso import justdoit as jdi
 except ImportError:
-    pass
+    print("Tried importing picaso, but couldn't do it")
 
 
 psisim_path = os.path.dirname(psisim.__file__)
@@ -188,7 +188,7 @@ def load_picaso_opacity(dbname=None,wave_range=None):
     # opacity_folder = os.path.join(os.getenv("picaso_refdata"),'opacities')
     
     # dbname = os.path.join(opacity_folder,dbname)
-    
+    print("Loading an opacity file from {}".format(dbname)) 
     return jdi.opannection(filename_db=dbname,wave_range=wave_range)
 
 
@@ -234,7 +234,7 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
     pl_rad  = planet_table_entry['PlanetRadius']
     pl_logg = planet_table_entry['PlanetLogg']
     # NOTE: picaso gravity() won't use the "gravity" input if mass and radius are provided
-    params.gravity(gravity=pl_logg.physical.value,gravity_unit=pl_logg.physical.unit,
+    params.gravity(gravity=pl_logg.value,gravity_unit=pl_logg.physical.unit,
                    mass=pl_mass.value,mass_unit=pl_mass.unit,
                    radius=pl_rad.value,radius_unit=pl_rad.unit)
 
@@ -577,8 +577,10 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
 
         # we normally want to put this in the get_castelli_kurucz_spectrum() function but the above line doens't work if we change units
         sp_norm.convert("Micron")
-        sp_norm.convert("photlam")
+        sp_norm.convert("photlam") #This is photons/s/cm^2/A
 
+        #Astropy units
+        sp_units = u.photon/u.s/(u.cm**2)/u.Angstrom
         #If wvs is a float then make it a list for the for loop
         if isinstance(wvs,float):
             wvs = [wvs]

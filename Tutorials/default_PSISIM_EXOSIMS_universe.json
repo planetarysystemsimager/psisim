@@ -1,0 +1,17 @@
+{
+  "modules": {
+    "PlanetPopulation": "SAG13",
+    "StarCatalog": "EXOCAT1",
+    "OpticalSystem": "Nemati",
+    "ZodiacalLight": "Stark",
+    "BackgroundSources": " ",
+    "PlanetPhysicalModel": "Forecaster",
+    "Observatory": "",
+    "TimeKeeping": " ",
+    "PostProcessing": " ",
+    "Completeness": " ",
+    "TargetList": " ",
+    "SimulatedUniverse": "SAG13Universe"},
+    "scienceInstruments": [{ "name": "imager"}],
+    "starlightSuppressionSystems": [{ "name": "coronagraph"}]
+  }

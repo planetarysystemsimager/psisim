@@ -1,6 +1,6 @@
 # PSI Simulator Tool
 
-Tool for the Planet Systems Imager to simulate the universe, generate planet spectra, evaulate instrument performance, and determine how well PSI can do science.
+Tool for the Planet Systems Imager to simulate the universe, generate planet spectra, evaulate instrument performance, and determine how well PSI can do science.  The framework is intended to be flexible enough to enable similar analyses for other instruments.
 
 Features of `psisim`:
 
@@ -20,6 +20,8 @@ Pull this repository:
 ```
 > git clone https://github.com/planetarysystemsimager/psisim.git
 ```
+*If you have a new OSX installation you may need to download and install xcode.*
+
 Move into that directory and run the following to pip install `psisim` and its dependencies:
 ```
 > pip install -e .

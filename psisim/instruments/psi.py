@@ -18,11 +18,12 @@ class PSI_Blue(Instrument):
         super(PSI_Blue,self).__init__()
 
         # The main instrument properties - static
-        self.read_noise = 0.
+        self.read_noise = 0. * u.electron
         self.gain = 1. #e-/ADU
-        self.dark_current = 0.
-        self.qe = 1. 
-
+        self.dark_current = 0. *u.electron/u.s
+        self.qe = 1. *u.electron/u.ph
+        self.spatial_sampling = 2
+        
         self.filters = ['r','i','z','Y','J','H']
         self.ao_filter = ['i']
         self.ao_filter2 = ['H']
@@ -46,7 +47,7 @@ class PSI_Blue(Instrument):
         # By default we assume a standard integrator, but 'lp' is also acceptable
         self.ao_algo = 'si'
 
-    def get_speckle_noise(self,separations,ao_mag,wvs,telescope,ao_mag2=None,
+    def get_speckle_noise(self,separations,ao_mag,ao_filter,wvs,star_spt,telescope,ao_mag2=None,
         contrast_dir=None):
         '''
         Returns the contrast for a given list of separations. 
@@ -79,7 +80,7 @@ class PSI_Blue(Instrument):
 
         #### HARDCODE integrator to be 'si' ####
         integrator = 'si'
-
+        
         #Find all the contrast files
         fnames = glob.glob(contrast_dir+"*"+integrator+"_profile.dat")
 
@@ -237,7 +238,7 @@ class PSI_Red(PSI_Blue):
             dwvs[0] = dwvs[1]
         self.current_dwvs = dwvs
 
-    def get_instrument_background(self,wvs):
+    def get_instrument_background(self,wvs,solidangle):
         '''
         Return the instrument background. 
 
