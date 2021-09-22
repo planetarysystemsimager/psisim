@@ -53,6 +53,7 @@ class ExoSims_Universe(Universe):
         
         # TODO: decide  units to use for photometric mags
 
+        import EXOSIMS.MissionSim
         import EXOSIMS.SimulatedUniverse.SAG13Universe
 
         with open(self.filename) as ff:
@@ -90,6 +91,7 @@ class ExoSims_Universe(Universe):
         su.TargetList.stellar_mass() # generate masses if haven't
         host_mass = np.array([su.TargetList.MsTrue[i].value for i in su.plan2star])*u.solMass
         host_teff = su.TargetList.stellarTeff(su.plan2star)
+
         # stellar photometry
         host_Bmags = np.array([su.TargetList.Bmag[i] for i in su.plan2star])
         host_Vmags = np.array([su.TargetList.Vmag[i] for i in su.plan2star])
