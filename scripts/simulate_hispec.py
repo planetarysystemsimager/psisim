@@ -13,7 +13,7 @@ from numpy.random import poisson, randn
 import copy 
 
 #Do you want to make plots?
-plot = False
+plot = True
 
 ## Some initial setup
 filters = spectrum.load_filters()
@@ -35,9 +35,9 @@ with open(settings_file) as f:
 
 ### Telescope Setup
 keck = telescope.Keck(path=settings['path'])
-if settings.has_key('airmass'): keck.airmass = float(settings['airmass'])
-if settings.has_key('water_vapor'): keck.water_vapor = float(settings['water_vapor'])
-if settings.has_key('seeing'):
+if 'airmass' in settings: keck.airmass = float(settings['airmass'])
+if 'water_vapor' in settings: keck.water_vapor = float(settings['water_vapor'])
+if 'seeing' in settings:
     keck.seeing = float(settings['seeing'])
 else: 
     keck.seeing = keck.median_seeing
@@ -65,7 +65,7 @@ host_properties = {"StarLogg":float(settings['starlogg'])*u.dex(u.cm/ u.s**2),
 
 #Now setup the user parameters that a Phoenix model needs: (path, object_filter, magnitude_in_object_filter,
 # filters_object,current_filter). 
-host_user_params = (settings['path'],settings['filter'],settings['starmag'],
+host_user_params = (settings['path'],settings['starfilter'],float(settings['starmag']),
                     filters,hispec.current_filter)
 
 #Generate the spectrum! (Here we apply a doppler shift and rotationally broaden)
@@ -91,7 +91,7 @@ obj_properties = {"StarLogg":float(settings['logg'])*u.dex(u.cm/ u.s**2),
                   "StarVsini":float(settings['vsini'])*u.km/u.s,
                   "StarLimbDarkening":float(settings['limbdarkening'])}
 
-obj_user_params = (path,'TwoMASS-K',float(settings['mag']),filters,hispec.current_filter)
+obj_user_params = (settings['path'],settings['companionfilter'],float(settings['mag']),filters,hispec.current_filter)
 
 obj_spectrum = spectrum.get_stellar_spectrum(obj_properties,wavelengths,
                                              hispec.current_R,
@@ -146,13 +146,12 @@ for hispec_filter in hispec.filters:
     wavelengths = hispec.get_wavelength_range()
     hispec.set_observing_mode(3600,1,hispec_filter, wavelengths) 
     
-    
-    host_user_params = (path,'TwoMASS-J',5.0,filters,hispec.current_filter)
+    host_user_params = (settings['path'],settings['starfilter'],float(settings['starmag']),filters,hispec.current_filter) 
     host_spectrum = spectrum.get_stellar_spectrum(host_properties,wavelengths,hispec.current_R,
                                                   model="Phoenix",user_params=host_user_params,
                                                   doppler_shift=True,broaden=True,delta_wv=hispec.current_dwvs)
-    
-    obj_user_params = (path,'TwoMASS-K',20,filters,hispec.current_filter)
+
+    obj_user_params = (settings['path'],settings['companionfilter'],float(settings['mag']),filters,hispec.current_filter)
     obj_spectrum = spectrum.get_stellar_spectrum(obj_properties,wavelengths,hispec.current_R,model="Sonora",
                                                  user_params=obj_user_params,doppler_shift=True,broaden=True,
                                                  delta_wv=hispec.current_dwvs)
@@ -216,3 +215,4 @@ if plot:
     obj_properties["StarTeff"].value,obj_properties["StarLogg"].value,hispec.exposure_time,hispec.n_exposures))
     plt.ylim(1e-4,1e2)
     plt.grid()
+    plt.show()

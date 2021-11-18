@@ -1,5 +1,5 @@
 ### Instrument Setup
-path /scr3/dmawet/ETC
+path /scr3/dmawet/ETC/
 airmass 1.0
 water_vapor 1.6
 filter TwoMASS-J
@@ -9,14 +9,15 @@ mode off-axis
 #
 #
 ### Host Properties
-logg 4.00 #cm/s^2
-teff 10000 #K
-starZ -0.9
+starlogg 4.00 #cm/s^2
+starteff 10000 #K
+starZ -0.0
 starAlpha 0.0
 starRV 100 #km/s
-starvsin 10 #km/s
+starvsini 10 #km/s
 starlimbdarkening 0.8
-starmag 5.0 #mag in filter 
+starmag 5.0 #mag in starfilter 
+starfilter TwoMASS-J
 #
 #
 ### Companion Properties
@@ -27,6 +28,7 @@ vsini 10 #km/s
 limbdarkening 0.9 
 mag 20
 angsep 400 #mas - angular separation
+companionfilter TwoMASS-K
 #
 #
 ### Other Settings
