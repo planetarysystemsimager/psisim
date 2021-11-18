@@ -114,6 +114,7 @@ class Telescope():
         Args:
             wvs (np.array of float): wvs in microns to compute index of refraction of air
         """
+
         n = nair.nMathar(wvs, self.pressure.value, self.temperature.value, self.relative_humidity)
 
         return n
@@ -265,7 +266,7 @@ class Keck(Telescope):
         self.path = path #A path to background, transmission and AO files
 
         # Throughput data
-        self.th_data = np.genfromtxt(path+'/throughput/keck_throughput_budget.csv',skip_header=1,usecols=np.arange(5,1566),delimiter=',',missing_values='')
+        self.th_data = np.genfromtxt(datadir+'/throughput/keck_throughput_budget.csv',skip_header=1,usecols=np.arange(5,1566),delimiter=',',missing_values='')
 
 
     def get_sky_background(self, wvs, R=1e5):

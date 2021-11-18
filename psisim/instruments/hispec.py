@@ -53,7 +53,7 @@ class hispec(Instrument):
         else:
             self.telescope = telescope
 
-        self.th_data = np.genfromtxt(self.telescope.path+'/throughput/hispec_throughput_budget.csv',
+        self.th_data = np.genfromtxt(datadir+'/throughput/hispec_throughput_budget.csv',
                                     skip_header=1,usecols=np.arange(5,1566),delimiter=',',missing_values='')
 
         # load in fiber coupling efficiency as a function of misalignment
@@ -178,7 +178,7 @@ class hispec(Instrument):
         th_fiu = np.interp(wvs, th_wvs, np.prod(th_data[14:29], axis=0)) # KPIC throughput
         #th_fcd = np.interp(wvs, th_wvs, th_data[30]) # Fiber Dynamic Coupling (need function to scale with Strehl/NGS, currently unused)
         th_fiber = np.interp(wvs, th_wvs, np.prod(th_data[31:38], axis=0)) # Fiber throughput (excluding fcd above)
-        th_fiber *= self.get_dar_coupling_throughput(wvs)
+        #th_fiber *= self.get_dar_coupling_throughput(wvs) #MMB Commenting this out until astropy units are included. 
         th_spec = np.interp(wvs, th_wvs, np.prod(th_data[39:51], axis=0)) # HISPEC - SPEC throughput
 
         if planet_flag:
