@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d, RegularGridInterpolator as rgi
 import astropy.units as u
 import warnings
+import copy
 
 #Compute CCF SNR based on match filter
 def compute_ccf_snr_matchedfilter(signal, model, total_noise, sky_trans, systematics_residuals=0.01,kernel_size=501,norm_cutoff=0.8):
@@ -115,7 +116,7 @@ def compute_exp_time_to_ccf_snr_matchedfilter(signal, model, photon_noise, read_
 
 # The following code is built around using stacked arrays
 # If you are using multiple filters for example, pass through inputs like:
-	#wave = np.array(all_wavelengths[blue], all_wavelenghts[red]) split according to the wavelength range of your filters
+    #wave = np.array(all_wavelengths[blue], all_wavelenghts[red]) split according to the wavelength range of your filters
 
 # Reduce the Noisy Spectrum and Cross-Correlate with Observed Spectrum
 def reduce_spec(wave,delta_lb,samp,noisy_spec,model,photon_flux_atobj,photon_flux_thermal,ron,exp_time,sky_trans,cal, kernel_sz, norm_cutoff):
@@ -123,26 +124,26 @@ def reduce_spec(wave,delta_lb,samp,noisy_spec,model,photon_flux_atobj,photon_flu
     Reduce Observed Spectra and Cross-Correlate
 
     Inputs:
-	wave				- Your wavelength array
-	delta_lb			- Array of Resolutions per filter (defined from Dmitiri's notebook - I don't know the actual values for Keck)
-	samp				- Spacial sampling array per filter (np.array([3,3,3,3]))
-	noisy_spec			- Simulated noisy spectrum
-	model				- Model Spectrum (no sky)
-	photon_flux_atobj	- Photon flux at the object, stellar flux multiplied bu contrast there
-	photon_flux_thermal	- Thermal background and dark current photon flux
-	ron					- Readout Noise
-	exp_time			- Exposure time in units of seconds
-	sky_trans			- The sky transmission
-	cal					- Telluric calibration accuracy
-	kernel_sz			- The default high-pass filter size
+    wave				- Your wavelength array
+    delta_lb			- Array of Resolutions per filter (defined from Dmitiri's notebook - I don't know the actual values for Keck)
+    samp				- Spacial sampling array per filter (np.array([3,3,3,3]))
+    noisy_spec			- Simulated noisy spectrum
+    model				- Model Spectrum (no sky)
+    photon_flux_atobj	- Photon flux at the object, stellar flux multiplied bu contrast there
+    photon_flux_thermal	- Thermal background and dark current photon flux
+    ron					- Readout Noise
+    exp_time			- Exposure time in units of seconds
+    sky_trans			- The sky transmission
+    cal					- Telluric calibration accuracy
+    kernel_sz			- The default high-pass filter size
     norm_cutoff         - A cutoff below which we don't calculate the ccf-snr
 
     Returns:
-	noisy_spec_filt		- Filtered Noisy Spectrum
-	model_filt			- Filtered Model Spectrum 
-	ccf					- Correlation of Noisy Spectrum with Model Spectrum
-	ccf_model			- Correlation of Model with Model
-	velocity			- Velocity in km/s
+    noisy_spec_filt		- Filtered Noisy Spectrum
+    model_filt			- Filtered Model Spectrum 
+    ccf					- Correlation of Noisy Spectrum with Model Spectrum
+    ccf_model			- Correlation of Model with Model
+    velocity			- Velocity in km/s
     '''
 
     noisy_spec_filt = np.copy(wave)
@@ -151,24 +152,27 @@ def reduce_spec(wave,delta_lb,samp,noisy_spec,model,photon_flux_atobj,photon_flu
     ccf_model = np.copy(wave)
     velocity = np.copy(wave)
 
+    norm_noisy_spec = copy.deepcopy(noisy_spec)
+    
+
     for i in range(wave.shape[0]):
         #This background subtraction was reducing the data to almost zero, so I got rid of it for now
         
         #total_background = photon_flux_atobj[i] * exp_time + photon_flux_thermal[i] * exp_time 
-		#Background subtraction
+        #Background subtraction
         #noisy_spec_tmp = (noisy_spec[i] * exp_time - (1-cal) * total_background) / ((1-cal) * photon_flux_atobj[i] * exp_time)
         #noisy_spec_tmp *= u.electron
-		# noisy_spec_tmp = (noisy_spec[i] - photon_flux_thermal[i].value * exp_time.value) / (photon_flux_atobj[i].value * exp_time.value)
+        # noisy_spec_tmp = (noisy_spec[i] - photon_flux_thermal[i].value * exp_time.value) / (photon_flux_atobj[i].value * exp_time.value)
 
-		#Normalization by sky transmission
+        #Normalization by sky transmission
         norm = ((1-cal)*sky_trans[i])
         index=np.where(norm < norm_cutoff)
-        noisy_spec[i] = noisy_spec[i]/norm
-        noisy_spec[i][index] = 0.
+        norm_noisy_spec[i] = norm_noisy_spec[i]/norm
+        norm_noisy_spec[i][index] = 0.
 
-		#High-pass filter
-        noisy_spec_medfilt=median_filter(noisy_spec[i],kernel_sz,mode='nearest')
-        noisy_spec_filt[i]=(noisy_spec[i]/noisy_spec[i].unit-noisy_spec_medfilt) * noisy_spec[i].unit
+        #High-pass filter
+        noisy_spec_medfilt=median_filter(norm_noisy_spec[i],kernel_sz,mode='nearest')
+        noisy_spec_filt[i]=(norm_noisy_spec[i]/norm_noisy_spec[i].unit-noisy_spec_medfilt) * norm_noisy_spec[i].unit
         noisy_spec_filt[i][np.isnan(noisy_spec_filt[i])]=0    
         noisy_spec_filt[i][index]=0    
 
@@ -176,13 +180,13 @@ def reduce_spec(wave,delta_lb,samp,noisy_spec,model,photon_flux_atobj,photon_flu
         model_filt[i]=(model[i]/model[i].unit-model_medfilt) * model[i].unit
         model_filt[i][np.isnan(model_filt[i])]=0 
         model_filt[i][index]=0
-		#Correlation
+        #Correlation
         ccf[i]=correlate(noisy_spec_filt[i],model_filt[i])
         ccf_model[i]=correlate(model_filt[i],model_filt[i])
         c=3e5 * u.km/u.s
         dvelocity = np.mean(delta_lb[i] * c / wave[i])
         velocity[i]=(np.arange(ccf_model[i].shape[0])-ccf_model[i].shape[0]/2) * dvelocity
-		
+        
     return noisy_spec_filt, model_filt, ccf, ccf_model, velocity
 
 #Plot reduced Spectra with Feature lines
@@ -236,8 +240,8 @@ def plot_features(wave,spec_model_filt,noisy_spec_filt,features):
         'k': {'label': r'K I', 'type': 'line', 'wavelengths': [[0.7699,0.7665],[1.169,1.177],[1.244,1.252]]}, \
         'ki': {'label': r'K I', 'type': 'line', 'wavelengths': [[0.7699,0.7665],[1.169,1.177],[1.244,1.252]]}, \
         'k1': {'label': r'K I', 'type': 'line', 'wavelengths': [[0.7699,0.7665],[1.169,1.177],[1.244,1.252]]}, \
-		'h19f': {'label': r'H$^{19}$F', 'type': 'line', 'wavelengths': [[2.3358329,2.3358329]]}, \
-		's1': {'label': r'S I', 'type': 'line', 'wavelengths': [[1.0455449,1.0456757,1.0459406]]}			}
+        'h19f': {'label': r'H$^{19}$F', 'type': 'line', 'wavelengths': [[2.3358329,2.3358329]]}, \
+        's1': {'label': r'S I', 'type': 'line', 'wavelengths': [[1.0455449,1.0456757,1.0459406]]}			}
     plt.figure(figsize=(30,10))
     bound=np.array([np.min(wave/wave.unit),np.max(wave/wave.unit),2*np.min(noisy_spec_filt/noisy_spec_filt.unit),2*np.max(noisy_spec_filt/noisy_spec_filt.unit)])
     nsamples=wave.shape[0]
@@ -280,7 +284,7 @@ def plot_features(wave,spec_model_filt,noisy_spec_filt,features):
                             plt.plot([w]*2,[y,y+yoff],color='k',linestyle='-')
                         plt.text(np.mean(waveRng),y+1.5*yoff,feature_labels[ftr]['label'],horizontalalignment='center',fontsize=fontsize)
                         waveRng = [waveRng[0]-0.02,waveRng[1]+0.02]   # for overlap
-						# update offset
+                        # update offset
                     foff = [y+3*yoff if (w >= waveRng[0] and w <= waveRng[1]) else 0 for w in wvmax]
                     flxmax = [np.max([xx,yy]) for xx, yy in zip(flxmax, foff)]
     bound[3] = np.nanmax([np.nanmax(flxmax)+1.*yoff,bound[3]])
@@ -290,21 +294,22 @@ def plot_features(wave,spec_model_filt,noisy_spec_filt,features):
 
 #Compute PRV accuracy
 def compute_prv_sigma(wave,delta_lb,snr,model,sky_trans, cal, kernel_sz):
-	c=3e8 * u.m/u.s
-	sigma_rv_inst = 0.1 * u.m / u.s
-	sigma_rv = np.copy(wave)
-	for i in range(wave.shape[0]):
-		dvelocity = delta_lb[i] * c / wave[i]
+    c=3e8 * u.m/u.s
+    sigma_rv_inst = 0.1 * u.m / u.s
+    sigma_rv = np.copy(wave)
+    for i in range(wave.shape[0]):
+        dvelocity = delta_lb[i] * c / wave[i]
 # 		model_medfilt=medfilt(model[i],kernel_size = kernel_sz) * model[i].unit
-		dummy = model[i].value
-		model_medfilt=median_filter(dummy,kernel_sz,mode='nearest') * model[i].unit
+        dummy = model[i].value
+        model_medfilt=median_filter(dummy,kernel_sz,mode='nearest') * model[i].unit
 # 		model_medfilt=medfilt2d(model[i].value.reshape(1, -1),(1,kernel_sz))[0] * model[i].unit
-		model_filt_norm=(model[i])/model_medfilt
-		didv=np.gradient(model_filt_norm)/dvelocity
-		didv[np.isnan(didv)]=0
-		norm = ((1-cal)*sky_trans[i])
-		index=np.where(norm < 0.8)
-		didv[index]=0.0
-		print(np.sum((didv)**2), np.sum(snr[i]**2))
-		sigma_rv[i] = np.sqrt( (np.sqrt(1.0)/np.sqrt(np.sum((didv*snr[i])**2)))**2 + sigma_rv_inst**2)
-	return sigma_rv
+        model_filt_norm=(model[i])/model_medfilt
+        didv=np.gradient(model_filt_norm)/dvelocity
+        didv[np.isnan(didv)]=0
+        didv[np.isinf(didv)]=0
+        norm = ((1-cal)*sky_trans[i])
+        index=np.where(norm < 0.8)
+        didv[index]=0.0
+        print(np.nansum((didv)**2), np.nansum(snr[i]**2))
+        sigma_rv[i] = np.sqrt( (np.sqrt(1.0)/np.sqrt(np.nansum((didv*snr[i])**2)))**2 + sigma_rv_inst**2)
+    return sigma_rv
