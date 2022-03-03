@@ -364,7 +364,7 @@ class hispec(Instrument):
         w_halo = telescope.diameter / r0_sc
         
         for i,sep in enumerate(separations):
-            ang_sep_resel_in = sep/206265/u.arcsecond*telescope.diameter/wvs.to(u.m) #Convert separations from arcseconds to units of lambda/D
+            ang_sep_resel_in = sep.to(u.rad).value * telescope.diameter.to(u.m)/wvs.to(u.m) #Convert separations from arcseconds to units of lambda/D
 
             # import pdb; pdb.set_trace()
             f_halo = np.pi*(1-SR)*0.488/w_halo**2 * (1+11./6*(ang_sep_resel_in/w_halo)**2)**(-11/6.)
