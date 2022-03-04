@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import scipy.interpolate as si
 import astropy.units as u
@@ -154,7 +155,8 @@ class TMT(Telescope):
         solidangle = diffraction_limit**2 * 1.13
 
         #Read in the background file
-        sky_background_tmp = np.genfromtxt(self.path+'sky/mk_skybg_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'_ph.dat', skip_header=0)
+        sky_filepath = os.path.join(self.path, "sky", 'mk_skybg_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'_ph.dat')
+        sky_background_tmp = np.genfromtxt(sky_filepath, skip_header=0)
         sky_background_MK = sky_background_tmp[:,1]
         sky_background_MK_wave = sky_background_tmp[:,0] * u.nm
 
@@ -182,7 +184,8 @@ class TMT(Telescope):
         '''
 
         #Read in the sky transmission for the current observing conditions
-        sky_trans_tmp = np.genfromtxt(self.path+'sky/mktrans_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'.dat', skip_header=0)
+        sky_filepath = os.path.join(self.path, "sky", 'mktrans_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'.dat')
+        sky_trans_tmp = np.genfromtxt(sky_filepath, skip_header=0)
         sky_trans = sky_trans_tmp[:,1]
         sky_trans_wave = sky_trans_tmp[:,0]*u.micron #* u.nm
 
@@ -266,7 +269,8 @@ class Keck(Telescope):
         self.path = path #A path to background, transmission and AO files
 
         # Throughput data
-        self.th_data = np.genfromtxt(datadir+'/throughput/keck_throughput_budget.csv',skip_header=1,usecols=np.arange(5,1566),delimiter=',',missing_values='')
+        th_filepath = os.path.join(datadir, 'throughput', 'keck_throughput_budget.csv')
+        self.th_data = np.genfromtxt(th_filepath, skip_header=1,usecols=np.arange(5,1566),delimiter=',',missing_values='')
 
 
     def get_sky_background(self, wvs, R=1e5):
@@ -287,7 +291,8 @@ class Keck(Telescope):
         solidangle = diffraction_limit**2 * 1.13
 
         #Read in the background file
-        sky_background_tmp = np.genfromtxt(self.path+'sky/mk_skybg_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'_ph.dat', skip_header=0)
+        sky_filepath = os.path.join(self.path, "sky", 'mk_skybg_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'_ph.dat')
+        sky_background_tmp = np.genfromtxt(sky_filepath, skip_header=0)
         sky_background_MK = sky_background_tmp[:,1]
         sky_background_MK_wave = sky_background_tmp[:,0] * u.nm
 
@@ -315,7 +320,8 @@ class Keck(Telescope):
         '''
 
         #Read in the sky transmission for the current observing conditions
-        sky_trans_tmp = np.genfromtxt(self.path+'sky/mktrans_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'.dat', skip_header=0)
+        sky_filepath = os.path.join(self.path, "sky", 'mktrans_zm_'+str(self.water_vapor)+'_'+str(self.airmass)+'.dat')
+        sky_trans_tmp = np.genfromtxt(sky_filepath, skip_header=0)
         sky_trans = sky_trans_tmp[:,1]
         sky_trans_wave = sky_trans_tmp[:,0]*u.micron #* u.nm
 

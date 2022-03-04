@@ -270,7 +270,8 @@ class kpic_phaseII(Instrument):
         path = self.telescope.path
 
         #Read in the ao_wfe
-        ao_wfe=np.genfromtxt(path+'aowfe/hispec_modhis_ao_errorbudget_v3.csv', delimiter=',',skip_header=1)
+        wfe_filepath = os.path.join(path, 'aowfe', 'hispec_modhis_ao_errorbudget_v3.csv')
+        ao_wfe=np.genfromtxt(wfe_filepath, delimiter=',',skip_header=1)
         ao_rmag = ao_wfe[:,0]
         
         if self.mode == 'vfn':
@@ -475,7 +476,8 @@ class kpic_phaseII(Instrument):
             path = self.telescope.path
 
             # load ideal VFN coupling curves
-            th_vfn_ideal = np.genfromtxt(path+'VFN/Charge%d_Ideal.txt'%(self.vortex_charge), delimiter=',', skip_header=0)
+            th_filepath = os.path.join(path, "VFN", "Charge%d_Ideal.txt"%(self.vortex_charge))
+            th_vfn_ideal = np.genfromtxt(th_filepath, delimiter=',', skip_header=0)
 
             if np.size(separations) < 2:
                 separations = np.array([separations.value])*separations.unit
