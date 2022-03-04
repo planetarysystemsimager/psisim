@@ -344,20 +344,26 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
 
         # model_wvs is reversed so re-sort it and then extract requested wavelengths
         argsort = np.argsort(model_wvs)
-        lowres_ref_spec = Spectrum(model_wvs[argsort], fpfs_reflected[argsort], np.mean(model_R))
-        lowres_therm_spec = Spectrum(model_wvs[argsort], fp_thermal[argsort], np.mean(model_R))
+        modelres_ref_spec = Spectrum(model_wvs[argsort], fpfs_reflected[argsort], np.mean(model_R))
+        modelres_therm_spec = Spectrum(model_wvs[argsort], fp_thermal[argsort], np.mean(model_R))
         
-        fpfs_ref = lowres_ref_spec.downsample_spectrum(R, new_wvs=wvs)
-        fp_therm = lowres_therm_spec.downsample_spectrum(R, new_wvs=wvs)
+        fpfs_ref = modelres_ref_spec.downsample_spectrum(R, new_wvs=wvs)
+        fp_therm = modelres_therm_spec.downsample_spectrum(R, new_wvs=wvs)
 
-        highres_fp_reflected =  model_alb * (planet_table_entry['PlanetRadius']*u.earthRad.to(u.au)/planet_table_entry['SMA'])**2 # flux ratio relative to host star
-        highres_fp = highres_fp_reflected + fp_thermal
-        
         # fp_therm comes in with units of ergs/s/cm^3, convert to ph/s/cm^2/Angstrom
-        fp_therm = fp_therm * u.erg/u.s/u.cm**2/u.cm
+        # defined as top of the atmopshere flux, scale top of atmosphere flux to flux at Earth
+        fp_therm = fp_therm * u.erg/u.s/u.cm**2/u.cm * (planet_table_entry['PlanetRadius']/planet_table_entry['Distance'])**2
         fp_therm = fp_therm.to(u.ph/u.s/u.cm**2/u.AA,equivalencies=u.spectral_density(wvs))
 
-        return fpfs_ref,fp_therm,df
+        lowres_ref_spec = Spectrum(wvs, fpfs_ref, R)
+        lowres_therm_spec = Spectrum(wvs, fp_therm, R)
+        
+        # highres_fp_reflected =  model_alb * (planet_table_entry['PlanetRadius']*u.earthRad.to(u.au)/planet_table_entry['SMA'])**2 # flux ratio relative to host star
+        # highres_fp = highres_fp_reflected + fp_thermal
+        
+
+
+        return lowres_ref_spec, lowres_therm_spec,df
 
     elif package.lower() == "picaso+pol":
         '''
