@@ -50,6 +50,7 @@ class kpic_phaseII(Instrument):
 
         self.th_data = np.genfromtxt(self.telescope.path+'/throughput/hispec_throughput_budget.csv',
                                     skip_header=1,usecols=np.arange(5,166),delimiter=',',missing_values='')
+        self.nirspec_th_data = np.loadtxt(os.path.join(os.path.dirname(psisim.__file__),'data','throughput','nirspec_only_throughput.csv'),delimiter=",",skiprows=1)
 
         # load in fiber coupling efficiency as a function of misalignment
         fiber_data_filename = os.path.join(datadir, "smf", "keck_pupil_charge0.csv")
@@ -58,7 +59,7 @@ class kpic_phaseII(Instrument):
 
         #AO parameters
         self.nactuators = 32. - 2.0 #The number of DM actuators in one direction
-        self.fiber_contrast_gain = 10. #The gain in contrast thanks to the fiber. ('off-axis' mode only)
+        self.fiber_contrast_gain = 2. #The gain in contrast thanks to the fiber. ('off-axis' mode only)
         self.p_law_dh = -2.0 #The some power law constant Dimitri should explain. 
         self.ao_filter = 'TwoMASS-H' #Available AO filters - per Dimitri
         self.d_ao = 0.15 * u.m
@@ -181,7 +182,8 @@ class kpic_phaseII(Instrument):
         th_data = self.th_data
         th_wvs = th_data[0] * u.micron
 
-        th_ao = {"CFHT-Y":0.60,"TwoMASS-J":0.63,"TwoMASS-H":0.66,"TwoMASS-K":0.633}.get(self.current_filter) #K-band from Nem's Feb 2020 report
+        # th_ao = {"CFHT-Y":0.60,"TwoMASS-J":0.63,"TwoMASS-H":0.66,"TwoMASS-K":0.633}.get(self.current_filter) #K-band from Nem's Feb 2020 report
+        th_ao = np.interp(wvs, th_wvs, np.prod(th_data[2:13],axis=0))
         if self.mode == 'vfn':
             #th_fiu = {"CFHT-Y":0.66,"TwoMASS-J":0.68,"TwoMASS-H":0.7,"TwoMASS-K":0.6}.get(self.current_filter) #K from Dimitri (KPIC OAPS+FM+dichroic+PIAA(95%)+DM Window(90%)+ADC(90%))
             th_fiu = np.interp(wvs, th_wvs, np.prod(th_data[14:19],axis=0)*np.prod(th_data[20:29],axis=0)) # (omit coro.)
@@ -218,6 +220,20 @@ class kpic_phaseII(Instrument):
         th_spec = self.get_spec_throughput(wvs)
         th_inst = th_ao * th_fiu * th_feu * th_fiber * th_planet * th_spec * SR
 
+        # import matplotlib.pyplot as plt
+        # # print("th_ao",th_ao)
+        # print("th_feu",th_feu)
+        # print("th_planet",th_planet)
+        # plt.plot(wvs,th_ao,label="th_ao")
+        # plt.plot(wvs,th_fiu,label="th_fiu")
+        # # plt.plot(wvs,th_feu,label="th_feu")
+        # plt.plot(wvs,th_fiber,label="th_fiber")
+        # # plt.plot(wvs,th_planet,label="th_planet")
+        # plt.plot(wvs,th_spec,label="th_spec")
+        # plt.plot(wvs,SR,label="SR")
+        # plt.legend()
+        # plt.show()
+
         return th_inst
     
     def get_inst_emissivity(self,wvs):
@@ -234,9 +250,13 @@ class kpic_phaseII(Instrument):
         self.get_inst_throughput includes everything, whereas this is just the spectrograph. 
         '''
         # K-band value for NIRSPEC from Dimitri Code
-        th_spec = {"CFHT-Y":0.5,"TwoMASS-J":0.5,"TwoMASS-H":0.5,"TwoMASS-K":0.2}.get(self.current_filter,0.5)
+        if self.current_filter == "TwoMASS-K":
+            th_spec = 0.2*si.interp1d(self.nirspec_th_data[:,0], self.nirspec_th_data[:,1],bounds_error=False,fill_value=0)(wvs)
+        else:
+            th_spec = {"CFHT-Y":0.5,"TwoMASS-J":0.5,"TwoMASS-H":0.5,"TwoMASS-K":0.2}.get(self.current_filter,0.5)
+            th_spec = th_spec*np.ones(np.shape(wvs))
 
-        return th_spec*np.ones(np.shape(wvs))
+        return th_spec
 
     def get_instrument_background(self,wvs,solidangle):
         '''
@@ -281,7 +301,8 @@ class kpic_phaseII(Instrument):
             ao_wfe[:,4] = ao_wfe[:,4] * 85/ao_wfe[0,4]
 
         # indexes for ao_wfe from Dimitri Code
-        ao_wfe_ngs=ao_wfe[:,4] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
+        ao_wfe_ngs=ao_wfe[:,4] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.)) # KPIC phase 2
+        #ao_wfe_ngs=ao_wfe[:,3] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.)) # KPIC Phase 1
         ao_wfe_lgs=ao_wfe[:,5] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
 
         return ao_rmag,ao_wfe_ngs*u.nm,ao_wfe_lgs*u.nm
@@ -358,7 +379,7 @@ class kpic_phaseII(Instrument):
             w_halo = telescope.diameter / r0_sc
             
             for i,sep in enumerate(separations):
-                ang_sep_resel_in = sep/206265/u.arcsecond*telescope.diameter/wvs.to(u.m) #Convert separations from arcseconds to units of lambda/D
+                ang_sep_resel_in = sep.to(u.rad).value * telescope.diameter.to(u.m)/wvs.to(u.m) #Convert separations from arcseconds to units of lambda/D
 
                 # import pdb; pdb.set_trace()
                 f_halo = np.pi*(1-SR)*0.488/w_halo**2 * (1+11./6*(ang_sep_resel_in/w_halo)**2)**(-11/6.)
