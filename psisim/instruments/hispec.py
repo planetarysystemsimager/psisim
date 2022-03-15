@@ -53,7 +53,8 @@ class hispec(Instrument):
         else:
             self.telescope = telescope
 
-        self.th_data = np.genfromtxt(datadir+'/throughput/hispec_throughput_budget.csv',
+        th_filepath = os.path.join(datadir, "throughput", "hispec_throughput_budget.csv")
+        self.th_data = np.genfromtxt(th_filepath,
                                     skip_header=1,usecols=np.arange(5,1566),delimiter=',',missing_values='')
 
         # load in fiber coupling efficiency as a function of misalignment
@@ -247,7 +248,8 @@ class hispec(Instrument):
         path = self.telescope.path
 
         #Read in the ao_wfe
-        ao_wfe=np.genfromtxt(path+'aowfe/hispec_modhis_ao_errorbudgetb.csv', delimiter=',',skip_header=1)
+        wfe_filepath = os.path.join(path, 'aowfe', 'hispec_modhis_ao_errorbudgetb.csv')
+        ao_wfe=np.genfromtxt(wfe_filepath, delimiter=',',skip_header=1)
         ao_rmag = ao_wfe[:,0]
 
         # if isinstance(self, hispec):
