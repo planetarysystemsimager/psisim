@@ -642,7 +642,7 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
         spec.spectrum = spec_u
         # new_ABmag = get_obj_ABmag(wave_u,spec_u,instrument_filter,filters)
             
-        # spec.scale_spectrum_to_ABmag(new_ABmag,instrument_filter,filters)
+        # spec.scale_spectrum_to_ABmag(new_ABmag,instrument_filter)
 
     else:
         if verbose:
@@ -944,7 +944,7 @@ def get_model_ABmags(planet_table_entry,filter_name_list, model='Phoenix',verbos
         spec = Spectrum(wave_u, spec_u, None) # R is none since it doesn't matter for the needed function
         #Now scasle the spectrum so that it has the appropriate vegamagnitude
         #(with an internal AB mag)
-        spec.scale_spectrum_to_vegamag(star_mag,star_filter,filters)
+        spec.scale_spectrum_to_vegamag(star_mag,star_filter)
 
     elif model == 'Sonora':
         
@@ -962,7 +962,7 @@ def get_model_ABmags(planet_table_entry,filter_name_list, model='Phoenix',verbos
         spec = Spectrum(wave_u, spec_u, None) # R is none since it doesn't matter for the needed function
         #Now scale the spectrum so that it has the appropriate vegamagnitude
         #(with an internal AB mag)
-        spec.scale_spectrum_to_vegamag(star_mag,star_filter,filters)
+        spec.scale_spectrum_to_vegamag(star_mag,star_filter)
 
 
     mags = filters.get_ab_magnitudes(spec.spectrum.to(u.erg/u.m**2/u.s/u.Angstrom,equivalencies=u.spectral_density(wave_u)),wave_u.to(u.Angstrom))
