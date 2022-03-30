@@ -125,7 +125,7 @@ class TMT(Telescope):
     An implementation of the Telescope class
     '''
     def __init__(self,airmass = 1.0,water_vapor=  1.0,path=None):
-        super(TMT, self).__init__(30)
+        super(TMT, self).__init__(30) #todo: correction needed due to central obscuration
 
         self.temperature = 276 * u.K
         self.median_seeing = 0.6 * u.arcsec

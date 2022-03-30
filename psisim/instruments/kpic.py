@@ -37,7 +37,7 @@ class kpic_phaseII(Instrument):
 
         # The main instrument properties - static
         self.read_noise = 10 *u.electron # * u.photon#e-/pix/fr
-        self.dark_current = 0.67*u.electron/u.s #electrons/s/pix
+        self.dark_current = 0.8*u.electron/u.s#0.67*u.electron/u.s #electrons/s/pix
         self.det_welldepth = 1e5 *u.photon
         self.det_linearity = 0.66*self.det_welldepth
         self.qe = 0.95 * u.electron/u.ph
@@ -62,7 +62,7 @@ class kpic_phaseII(Instrument):
         self.fiber_contrast_gain = 2. #The gain in contrast thanks to the fiber. ('off-axis' mode only)
         self.p_law_dh = -2.0 #The some power law constant Dimitri should explain. 
         self.ao_filter = 'TwoMASS-H' #Available AO filters - per Dimitri
-        self.d_ao = 0.15 * u.m
+        self.d_ao = 9.85*u.m#0.15 * u.m
         self.area_ao = np.pi*(self.d_ao/2)**2
         
         self.name = "Keck-KPIC-PhaseII"
@@ -251,9 +251,9 @@ class kpic_phaseII(Instrument):
         '''
         # K-band value for NIRSPEC from Dimitri Code
         if self.current_filter == "TwoMASS-K":
-            th_spec = 0.2*si.interp1d(self.nirspec_th_data[:,0], self.nirspec_th_data[:,1],bounds_error=False,fill_value=0)(wvs)
+            th_spec = 0.3*si.interp1d(self.nirspec_th_data[:,0], self.nirspec_th_data[:,1],bounds_error=False,fill_value=0)(wvs)
         else:
-            th_spec = {"CFHT-Y":0.5,"TwoMASS-J":0.5,"TwoMASS-H":0.5,"TwoMASS-K":0.2}.get(self.current_filter,0.5)
+            th_spec = {"CFHT-Y":0.5,"TwoMASS-J":0.5,"TwoMASS-H":0.5,"TwoMASS-K":0.3}.get(self.current_filter,0.5)
             th_spec = th_spec*np.ones(np.shape(wvs))
 
         return th_spec
@@ -301,8 +301,8 @@ class kpic_phaseII(Instrument):
             ao_wfe[:,4] = ao_wfe[:,4] * 85/ao_wfe[0,4]
 
         # indexes for ao_wfe from Dimitri Code
-        ao_wfe_ngs=ao_wfe[:,4] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.)) # KPIC phase 2
-        #ao_wfe_ngs=ao_wfe[:,3] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.)) # KPIC Phase 1
+        # ao_wfe_ngs=ao_wfe[:,4] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.)) # KPIC phase 2
+        ao_wfe_ngs=ao_wfe[:,3] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.)) # KPIC Phase 1
         ao_wfe_lgs=ao_wfe[:,5] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
 
         return ao_rmag,ao_wfe_ngs*u.nm,ao_wfe_lgs*u.nm

@@ -56,7 +56,7 @@ class modhis(hispec):
         self.fiber_contrast_gain = 10. #Contrast gain due to fiber ('off-axis' mode only)
         self.p_law_dh = -2.0 #The some power law constant Dimitri should explain. 
         self.ao_filter = 'bessell-I'
-        self.d_ao = 0.3 * u.m
+        self.d_ao = 30*u.m#0.3*u.m#30*u.m
         self.area_ao = np.pi*(self.d_ao/2)**2
         
         self.name = "TMT-MODHIS"

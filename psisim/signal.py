@@ -34,7 +34,7 @@ def compute_ccf_snr_matchedfilter(signal, model, total_noise, sky_trans, systema
     #Get a median-filtered version of your model spectrum
     model_medfilt = medfilt(model,kernel_size=kernel_size)
     #Subtract the median version from the original model, effectively high-pass filtering the model
-    model_filt = model.value-model_medfilt
+    model_filt = model-model_medfilt*model.unit
     model_filt[np.isnan(model_filt)] = 0.
     model_filt[norm<norm_cutoff] = 0.
     model_filt[bad_noise] = 0.
@@ -43,7 +43,7 @@ def compute_ccf_snr_matchedfilter(signal, model, total_noise, sky_trans, systema
     normed_signal = signal/norm
     #High-pass filter like with the model
     signal_medfilt = medfilt(normed_signal,kernel_size=kernel_size)
-    signal_filt = normed_signal.value-signal_medfilt
+    signal_filt = normed_signal-signal_medfilt*normed_signal.unit
     signal_filt[np.isnan(signal_filt)] = 0.
     signal_filt[norm<norm_cutoff] = 0.
     signal_filt[bad_noise] = 0.
@@ -296,7 +296,7 @@ def plot_features(wave,spec_model_filt,noisy_spec_filt,features):
 def compute_prv_sigma(wave,delta_lb,snr,model,sky_trans, cal, kernel_sz):
     c=3e8 * u.m/u.s
     sigma_rv_inst = 0.1 * u.m / u.s
-    sigma_rv = np.copy(wave)
+    sigma_rv = []
     for i in range(wave.shape[0]):
         dvelocity = delta_lb[i] * c / wave[i]
 # 		model_medfilt=medfilt(model[i],kernel_size = kernel_sz) * model[i].unit
@@ -310,6 +310,6 @@ def compute_prv_sigma(wave,delta_lb,snr,model,sky_trans, cal, kernel_sz):
         norm = ((1-cal)*sky_trans[i])
         index=np.where(norm < 0.8)
         didv[index]=0.0
-        print(np.nansum((didv)**2), np.nansum(snr[i]**2))
-        sigma_rv[i] = np.sqrt( (np.sqrt(1.0)/np.sqrt(np.nansum((didv*snr[i])**2)))**2 + sigma_rv_inst**2)
+        # print(np.nansum((didv)**2), np.nansum(snr[i]**2))
+        sigma_rv.append(np.sqrt( (np.sqrt(1.0)/np.sqrt(np.nansum((didv*snr[i])**2)))**2 + sigma_rv_inst**2))
     return sigma_rv
