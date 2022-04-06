@@ -191,7 +191,7 @@ def load_picaso_opacity(dbname=None,wave_range=None):
     return jdi.opannection(filename_db=dbname,wave_range=wave_range)
 
 
-def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True, planet_mh=1, stellar_mh=0.0122, planet_teq=None, verbose=False):
+def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True, planet_mh=0.0, stellar_mh=0.0122, planet_teq=None, verbose=False):
     '''
     A function that returns the required inputs for picaso, 
     given a row from a universe planet table
@@ -201,8 +201,8 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
                             from a universe planet table [astropy table (or maybe astropy row)]
     planet_type - either "Terrestrial", "Ice", or "Gas" [string]
     clouds - cloud parameters. For now, only accept True/False to turn clouds on and off
-    planet_mh - planetary metalicity. 1 = 1x Solar
-    stellar_mh - stellar metalicity
+    planet_mh - planetary metalicity ([M/H]). Solar = 0
+    stellar_mh - stellar metalicity ([M/H])
     planet_teq - (float) planet's equilibrium temperature. If None, esimate using blackbody equilibrium temperature
 
     Outputs: 
@@ -262,7 +262,7 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
         params.guillot_pt(planet_teq, 150, -0.5, -1)
         # get chemistry via chemical equillibrium
         # params.channon_grid_high()
-        params.chemeq_visscher(1.0, 0.0)
+        params.chemeq_visscher(1.0, planet_mh)
 
         if clouds:
             # may need to consider tweaking these for reflected light
