@@ -261,7 +261,8 @@ def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True,
             planet_teq = ((st_rad/pl_sma).decompose()**2 * star_Teff**4)**(1./4)
         params.guillot_pt(planet_teq, 150, -0.5, -1)
         # get chemistry via chemical equillibrium
-        params.channon_grid_high()
+        # params.channon_grid_high()
+        params.chemeq_visscher(1.0, 0.0)
 
         if clouds:
             # may need to consider tweaking these for reflected light
