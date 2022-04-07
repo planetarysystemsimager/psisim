@@ -17,21 +17,21 @@ try:
 except ImportError:
     pass
 
+try: 
+    import picaso
+    from picaso import justdoit as jdi
+except ImportError:
+    print("Tried importing picaso, but couldn't do it")
+
+
 class Spectrum():
     '''
-    A class for spectra manipulation
+    A class for spectra manipulation.
 
-    The main properties will be: 
-    wvs    - sampled wavelengths (np.array of floats, in microns)
-    spectrum    - current flux values of the spectrum (np.array of floats, [photons/s/cm^2/A])
-    R   - spectral resolution (float)
-
-    The main functions will be: 
-    downsample_spectrum    - downsample a spectrum from one resolving power to another
-    scale_spectrum_to_vegamag    - scale a spectrum to have a given stellar J-magnitude
-    scale_spectrum_to_ABmag     - scale a spectrum to have a given stellar J-magnitude
-    apply_doppler_shift    - a function to apply a doppler shift to spectrum
-    rotationally_broaden    - a function to rotationally broaden a spectrum
+    Args:
+        wvs (np.array of floats): sampled wavelengths (in microns, specified by astropy.units)
+        spectrum (np.array of floats): current flux values of the spectrum (units of [photons/s/cm^2/A], specified by astropy.units)
+        R (float): spectral resolution
 
 
     '''
@@ -150,11 +150,301 @@ class Spectrum():
 
         return spec_broadened
 
-try: 
-    import picaso
-    from picaso import justdoit as jdi
-except ImportError:
-    print("Tried importing picaso, but couldn't do it")
+
+class PHOENIXSpectrum(Spectrum):
+    """
+    Creates a spectrum from the PHOENIX model grid
+
+    Args:
+        planet_table_entry (table.row or dict): a single row, corresponding to a single planet
+                            from a universe planet table [astropy table (or maybe astropy row)].
+                            Dictionary with keys that match column tables also works. 
+        wvs (astropy Quantity array - micron): a list of wavelengths to consider
+        R (float): the resolving power
+        doppler_shift (Quantity): amount of Doppler shift from observer rest frame to apply (velocity units)
+        broaden (Quantity): amount of rotational broadening to apply (velocity units)
+
+    """
+
+    def __init__(self, planet_table_entry, wvs, R, star_mag, star_mag_filter, filepath, phoenix_wvs_filepath,
+                 doppler_shift=None, broadening=None, verbose=False):
+       
+        try: 
+            star_z = planet_table_entry['StarZ']
+        except Exception as e: 
+            print(e)
+            print("Some error in reading your star Z value, setting Z to zero")
+            star_z = '-0.0'
+        
+        try: 
+            star_alpha = planet_table_entry['StarAlpha']
+        except Exception as e:
+            print(e)
+            print("Some error in reading your star alpha value, setting alpha to zero")
+            star_alpha ='0.0'
+
+        #Read in the model spectrum  
+        star_logg = planet_table_entry['StarLogg'].to(u.dex(u.cm/ u.s**2)).value
+        star_teff = planet_table_entry['StarTeff'].to(u.K).value   
+        wave_u, spec_u = get_phoenix_spectrum(star_logg, star_teff, star_z, star_alpha, filepath, phoenix_wvs_filepath)
+
+        #Get the wavelength sampling of the stellar spectrum
+        dwvs = wave_u - np.roll(wave_u, 1)
+        dwvs[0] = dwvs[1]
+        mean_R_in = np.mean(wave_u/dwvs)
+
+        # Initialize Spectrum class
+        super(PHOENIXSpectrum, self).__init__(wave_u, spec_u, mean_R_in) # This R is not correct until downsample spectrum is applied
+
+        self.scale_spectrum_to_vegamag(star_mag, star_mag_filter)
+
+        ## Apply a doppler shift if you'd like.
+        if doppler_shift is not None:
+            self.apply_doppler_shift(doppler_shift)
+
+        ## Rotationally broaden if you'd like
+        if broadening:
+            self.rotationally_broaden(0.5, broadening)
+
+        if R < mean_R_in:
+            self.downsample_spectrum(R, new_wvs=wvs)
+        else:
+            if verbose:
+                print("Warning: your requested Resolving power is greater than or equal to the native model. Upsampling.")
+            self.spectrum = np.interp(wvs, self.wvs, self.spectrum)
+            self.wvs = wvs
+
+        
+        self.spectrum = self.spectrum * spec_u.unit # TODO: do we need this??
+
+
+
+    def get_phoenix_spectrum(star_logG, star_Teff, star_z, star_alpha, path, phoenix_wvs_filepath):
+        '''
+        Read in a pheonix spectrum from a file
+        '''
+        #  if it is a directory, find the right file from in the folder assuming filenames are in standard PHOENIX format
+        if os.path.isdir(path):
+            #Read in your logG and make sure it's valid
+            available_logGs = [6.00,5.50,5.00,4.50,4.00,3.50,3.00,2.50,2.00,1.50,1.00,0.50]
+            if star_logG not in available_logGs:
+                raise ValueError("Your star has an invalid logG for Phoenix models. Please pick from {}".format(available_logGs))
+            
+            #Read in your t_Eff and make sure it's valid
+            available_teffs = np.hstack([np.arange(2300,7000,100),np.arange(7000,12200,200)])
+            star_Teff = int(star_Teff)
+            if star_Teff not in available_teffs:
+                raise ValueError("Your star has an invalid T_eff for Phoenix models. Please pick from {}".format(available_teffs))
+            
+            #Read in your metalicity and make sure it's valid
+            available_Z = ['-4.0','-3.0','-2.0','-1.5','-1.0','-0.5','-0.0','+0.5','+1.0']
+            if star_z not in available_Z:
+                raise ValueError("Your star has an invalid Z for Phoenix models")
+
+            #Read in your alpha value and make sure it's valid
+            available_alpha = ['-0.20','0.0','+0.20','+0.40','+0.60','+0.80','+1.00','+1.20']
+            if star_alpha not in available_alpha:
+                raise ValueError("Your star has an invalid alpha for Phoenix models")
+
+            #Get the right directory and file path
+            if star_alpha =='0.0':
+                dir_host_model = "Z"+str(star_z)
+                # host_filename = 'lte'+str(star_Teff).zfill(5)+'-'+str(star_logG)+str(star_z)+'.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'
+                host_filename = 'lte{}-{:.2f}{}.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'.format(str(star_Teff).zfill(5),star_logG,star_z)
+            else: 
+                dir_host_model='Z'+str(star_z)+'.Alpha='+str(star_alpha)
+                # host_filename = 'lte'+str(star_Teff).zfill(5)+'-'+str(star_logG)+str(star_z)+'.Alpha='+str(star_alpha)+'.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'
+                host_filename = 'lte{}-{:.2f}{}.Alpha={}.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'.format(str(star_Teff).zfill(5),star_logG,star_z,star_alpha)
+
+            path_to_file_host = os.path.join(path, dir_host_model, host_filename)
+        else:
+            # assume it's a direct path to the file, don't care about teff/logg passed in
+            path_to_file_host = path
+
+
+        #Now read in the spectrum and put it in the right file
+        with fits.open(phoenix_wvs_filepath) as hdulist:
+            wave_data = hdulist[0].data
+        wave_u = wave_data * u.AA
+        wave_u = wave_u.to(u.micron)
+        with fits.open(path_to_file_host, ignore_missing_end=True) as hdulist:
+            spec_data = hdulist[0].data
+        spec_u = spec_data * u.erg/u.s/u.cm**2/u.cm
+        #The original code outputs as above, but really we want it in photons/s/cm^2/A
+        spec_u = spec_u.to(u.ph/u.s/u.cm**2/u.AA,equivalencies=u.spectral_density(wave_u))
+
+        return wave_u, spec_u
+
+class PicasoSpectrum(Spectrum):
+    '''
+    Creates a spectrum using PICASO
+
+    Args:
+        planet_table_entry (table.row or dict): a single row, corresponding to a single planet
+                            from a universe planet table [astropy table (or maybe astropy row)].
+                            Dictionary with keys that match column tables also works. 
+        wvs (astropy Quantity array - micron): a list of wavelengths to consider
+        R (float): the resolving power
+        planet_type (str): either "Terrestrial", "Ice", or "Gas" 
+        opacity: PICASO opacity database generated by `load_picaso_opacity`
+        stellar_spec (Spectrum): stellar spectrum used to calibrate the data. Needs to be at the same spectral resolution! 
+        clouds (bool): cloud parameters. For now, only accept True/False to turn clouds on and off
+        planet_mh (float): planetary metalicity ([M/H]). Solar = 0
+        stellar_m (float): stellar metalicity ([M/H])
+        planet_teq (float): planet's equilibrium temperature. If None, esimate using blackbody equilibrium temperature
+    '''
+    def __init__(self, planet_table_entry, wvs, R, planet_type, opacity, stellar_spec, clouds=True, planet_mh=0.0, stellar_mh=0.0122, 
+                    planet_teq=None, verbose=False):
+
+        self.opacity = opacity
+
+        # set up planet type        
+        self.planet_type = planet_type.lower()
+        
+        if (self.planet_type not in ["gas"]) and verbose:
+            print("Only planet_type='Gas' spectra are currently implemented")
+            print("Generating a Gas-like spectrum")
+            self.planet_type = 'gas'
+
+        self.planet_table_entry = planet_table_entry
+
+        #### define picaso parmaeters #####
+        params = jdi.inputs()
+        params.approx(raman='none')
+
+        #-- Set phase angle.
+        # Note: non-0 phase in reflectance requires a different 
+        # geometry so we'll deal with that in the simulate_spectrum() call
+        params.phase_angle(0)
+
+        #-- Define gravity; any astropy units available
+        pl_mass = planet_table_entry['PlanetMass']
+        pl_rad  = planet_table_entry['PlanetRadius']
+        pl_logg = planet_table_entry['PlanetLogg']
+        # NOTE: picaso gravity() won't use the "gravity" input if mass and radius are provided
+        params.gravity(gravity=pl_logg.value,gravity_unit=pl_logg.physical.unit,
+                    mass=pl_mass.value,mass_unit=pl_mass.unit,
+                    radius=pl_rad.value,radius_unit=pl_rad.unit)
+
+        #-- Define star properties
+        #The current stellar models do not like log g > 5, so we'll force it here for now. 
+        star_logG = planet_table_entry['StarLogg'].to(u.dex(u.cm/ u.s**2)).value
+        if star_logG > 5.0:
+            star_logG = 5.0
+        #The current stellar models do not like Teff < 3500, so we'll force it here for now. 
+        star_Teff = planet_table_entry['StarTeff'].to(u.K).value
+        if star_Teff < 3500:
+            star_Teff = 3500   
+        #define star
+        #opacity db, pysynphot database, temp, metallicity, logg
+        st_rad = planet_table_entry['StarRad']
+        pl_sma = planet_table_entry['SMA']
+        params.star(self.opacity, star_Teff, stellar_mh, star_logG,
+                    radius=st_rad.value, radius_unit=st_rad.unit,
+                    semi_major=pl_sma.value, semi_major_unit=pl_sma.unit) 
+
+        #-- Define atmosphere PT profile, mixing ratios, and clouds
+        if self.planet_type == 'gas':
+            # PT from planetary equilibrium temperature
+            if planet_teq is None:
+                planet_teq = ((st_rad/pl_sma).decompose()**2 * star_Teff**4)**(1./4)
+            params.guillot_pt(planet_teq, 150, -0.5, -1)
+            # get chemistry via chemical equillibrium
+            params.chemeq_visscher(1.0, planet_mh) # Fix C/O currently
+
+            if clouds:
+                # may need to consider tweaking these for reflected light
+                params.clouds( g0=[0.9], w0=[0.99], opd=[0.5], p = [1e-3], dp=[5])
+        elif planet_type == 'terrestrial':
+            # TODO: add Terrestrial type
+            pass
+        elif planet_type == 'ice':
+            # TODO: add ice type
+            pass
+        
+        self.picaso_params = params
+
+        fpfs_ref, fp_therm, df = self.compute_spectrum(wvs, R)
+
+        self.refl_fpfs = fpfs_ref
+        self.therm = fp_therm
+        self.refl = fpfs_ref * stellar_spec.spectrum
+        self.therm_fpfs = fp_therm/stellar_spec.spectrum
+
+        super(PicasoSpectrum, self).__init__(wvs, self.therm + self.refl, R)
+
+        return
+
+    def compute_spectrum(self, wvs, R):
+        """
+        Helper function to compute the spectrum with picaso. Needs the opacity and picaso_params attributes
+
+        Args:
+            wvs (astropy Quantity array - micron): a list of wavelengths to consider
+            R (float): the resolving power
+
+        Returns:
+
+        """
+        # Make sure that picaso wavelengths are within requested wavelength range
+        op_wv = self.opacity.wave # this is identical to the model_wvs we compute below
+        if (wvs[0].value < op_wv.min()) or (wvs[-1].value > op_wv.max()):
+            rngs = (wvs[0].value,wvs[-1].value,op_wv.min(),op_wv.max())
+            err  = "The requested wavelength range [%f, %f] is outside the range selected [%f, %f] "%rngs
+            err += "from the opacity model (%s)"%self.opacity.db_filename
+        #    raise ValueError(err) 
+            warnings.warn(err)    
+        
+        # non-0 phases require special geometry which takes longer to run.
+          # To improve runtime, we always run thermal with phase=0 and simple geom.
+          # and then for non-0 phase, we run reflected with the costly geometry
+        phase = self.planet_table_entry['Phase'].to(u.rad).value
+        if phase == 0:
+            # Perform the simple simulation since 0-phase allows simple geometry
+            df = self.picaso_params.spectrum(self.opacity,full_output=True,calculation='thermal+reflected')
+        else:
+            # Perform the thermal simulation as usual with simple geometry
+            df1 = self.picaso_params.spectrum(self.opacity,full_output=True,calculation='thermal')
+            # Apply the true phase and change geometry for the reflected simulation
+            self.picaso_params.phase_angle(phase, num_tangle=8, num_gangle=8)
+            df2 = self.picaso_params.spectrum(self.opacity,full_output=True,calculation='reflected')
+            # Combine the output dfs into one df to be returned
+            df = df1.copy(); df.update(df2)
+            df['full_output_therm'] = df1.pop('full_output')
+            df['full_output_ref'] = df2.pop('full_output')
+
+        # Extract what we need now
+        model_wnos = df['wavenumber']
+        fpfs_reflected = df['fpfs_reflected']
+        fp_thermal = df['thermal']
+
+        # Compute model wavelength sampling
+        model_wvs = 1./model_wnos * 1e4 *u.micron        
+        model_dwvs = np.abs(model_wvs - np.roll(model_wvs, 1))
+        model_dwvs[0] = model_dwvs[1]
+        model_R = model_wvs/model_dwvs
+        
+        # Make sure that model resolution is higher than requested resolution
+        if R > np.mean(model_R):
+            wrn = "The requested resolution (%0.2f) is higher than the opacity model resolution (%0.2f)."%(R, np.mean(model_R))
+            wrn += " This is strongly discouraged as we'll be upsampling the spectrum."
+            warnings.warn(wrn)
+
+        # model_wvs is reversed so re-sort it and then extract requested wavelengths
+        # use some temporary spectrum classes just to do the downsample
+        argsort = np.argsort(model_wvs)
+        modelres_ref_spec = Spectrum(model_wvs[argsort], fpfs_reflected[argsort], np.mean(model_R))
+        modelres_therm_spec = Spectrum(model_wvs[argsort], fp_thermal[argsort], np.mean(model_R))
+        
+        fpfs_ref = modelres_ref_spec.downsample_spectrum(R, new_wvs=wvs)
+        fp_therm = modelres_therm_spec.downsample_spectrum(R, new_wvs=wvs)
+
+        # fp_therm comes in with units of ergs/s/cm^3, convert to ph/s/cm^2/Angstrom
+        # defined as top of the atmopshere flux, scale top of atmosphere flux to flux at Earth
+        fp_therm = fp_therm * u.erg/u.s/u.cm**2/u.cm * (self.planet_table_entry['PlanetRadius']/self.planet_table_entry['Distance'])**2
+        fp_therm = fp_therm.to(u.ph/u.s/u.cm**2/u.AA,equivalencies=u.spectral_density(wvs))
+
+        return fpfs_ref, fp_therm, df
 
 
 psisim_path = os.path.dirname(psisim.__file__)
@@ -171,14 +461,14 @@ def load_picaso_opacity(dbname=None,wave_range=None):
     '''
     A function that returns a picaso opacityclass from justdoit.opannection
     
-    Inputs:
-    dbname  - string filename, with path, for .db opacity file to load
-              default None: will use the default file that comes with picaso distro
-    wave_range - 2 element float list with wavelength bounds for which to run models
-                 default None: will pull the entire grid from the opacity file   
+    Args:
+        dbname (str): filename, with path, for .db opacity file to load
+                default None: will use the default file that comes with picaso distro
+        wave_range (2-element tuple): 2 element float list with wavelength bounds for which to run models
+                    default None: will pull the entire grid from the opacity file   
     
     Returns:
-    opacity - Opacity class from justdoit.opannection
+        opacity: Opacity class from justdoit.opannection
     '''
     # Not needed anymore but kept here for reference as way to get picaso path
     # opacity_folder = os.path.join(os.path.dirname(picaso.__file__), '..', 'reference', 'opacities')
@@ -189,92 +479,6 @@ def load_picaso_opacity(dbname=None,wave_range=None):
     # dbname = os.path.join(opacity_folder,dbname)
     print("Loading an opacity file from {}".format(dbname)) 
     return jdi.opannection(filename_db=dbname,wave_range=wave_range)
-
-
-def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True, planet_mh=0.0, stellar_mh=0.0122, planet_teq=None, verbose=False):
-    '''
-    A function that returns the required inputs for picaso, 
-    given a row from a universe planet table
-
-    Inputs:
-    planet_table_entry - a single row, corresponding to a single planet
-                            from a universe planet table [astropy table (or maybe astropy row)]
-    planet_type - either "Terrestrial", "Ice", or "Gas" [string]
-    clouds - cloud parameters. For now, only accept True/False to turn clouds on and off
-    planet_mh - planetary metalicity ([M/H]). Solar = 0
-    stellar_mh - stellar metalicity ([M/H])
-    planet_teq - (float) planet's equilibrium temperature. If None, esimate using blackbody equilibrium temperature
-
-    Outputs: 
-    (as a tuple: params, opacity)
-      params - picaso.justdoit.inputs class
-      opacity - Opacity class from justdoit.opannection
-    
-    NOTE: this assumes a planet phase of 0. You can change the phase in the resulting params object afterwards.
-    '''
-    
-    planet_type = planet_type.lower()
-    
-    if (planet_type not in ["gas"]) and verbose:
-        print("Only planet_type='Gas' spectra are currently implemented")
-        print("Generating a Gas-like spectrum")
-        planet_type = 'gas'
-
-    params = jdi.inputs()
-    params.approx(raman='none')
-
-    #-- Set phase angle.
-    # Note: non-0 phase in reflectance requires a different 
-      # geometry so we'll deal with that in the simulate_spectrum() call
-    params.phase_angle(0)
-
-    #-- Define gravity; any astropy units available
-    pl_mass = planet_table_entry['PlanetMass']
-    pl_rad  = planet_table_entry['PlanetRadius']
-    pl_logg = planet_table_entry['PlanetLogg']
-    # NOTE: picaso gravity() won't use the "gravity" input if mass and radius are provided
-    params.gravity(gravity=pl_logg.value,gravity_unit=pl_logg.physical.unit,
-                   mass=pl_mass.value,mass_unit=pl_mass.unit,
-                   radius=pl_rad.value,radius_unit=pl_rad.unit)
-
-    #-- Define star properties
-    #The current stellar models do not like log g > 5, so we'll force it here for now. 
-    star_logG = planet_table_entry['StarLogg'].to(u.dex(u.cm/ u.s**2)).value
-    if star_logG > 5.0:
-        star_logG = 5.0
-    #The current stellar models do not like Teff < 3500, so we'll force it here for now. 
-    star_Teff = planet_table_entry['StarTeff'].to(u.K).value
-    if star_Teff < 3500:
-        star_Teff = 3500   
-    #define star
-      #opacity db, pysynphot database, temp, metallicity, logg
-    st_rad = planet_table_entry['StarRad']
-    pl_sma = planet_table_entry['SMA']
-    params.star(opacity, star_Teff, stellar_mh, star_logG,
-                radius=st_rad.value, radius_unit=st_rad.unit,
-                semi_major=pl_sma.value, semi_major_unit=pl_sma.unit) 
-
-    #-- Define atmosphere PT profile, mixing ratios, and clouds
-    if planet_type == 'gas':
-        # PT from planetary equilibrium temperature
-        if planet_teq is None:
-            planet_teq = ((st_rad/pl_sma).decompose()**2 * star_Teff**4)**(1./4)
-        params.guillot_pt(planet_teq, 150, -0.5, -1)
-        # get chemistry via chemical equillibrium
-        # params.channon_grid_high()
-        params.chemeq_visscher(1.0, planet_mh)
-
-        if clouds:
-            # may need to consider tweaking these for reflected light
-            params.clouds( g0=[0.9], w0=[0.99], opd=[0.5], p = [1e-3], dp=[5])
-    elif planet_type == 'terrestrial':
-        # TODO: add Terrestrial type
-        pass
-    elif planet_type == 'ice':
-        # TODO: add ice type
-        pass
-
-    return (params, opacity)
 
 def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="picaso"):
     '''
