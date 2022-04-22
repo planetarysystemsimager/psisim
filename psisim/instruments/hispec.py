@@ -337,8 +337,8 @@ class hispec(Instrument):
         #TODO: add ADC residuals effect
         #TODO: @Max, why feed "filter", "star_spt" if not used. Why feed "telescope" if already available from self.telescope?
 
-        if self.mode != 'vfn':
-            print("Warning: only 'vfn' mode has been confirmed")
+        # if self.mode != 'vfn':
+            # print("Warning: only 'vfn' mode has been confirmed")
         
         if self.mode == "on-axis":
             return np.ones([np.size(separations),np.size(wvs)])
