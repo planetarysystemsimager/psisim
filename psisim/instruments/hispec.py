@@ -63,9 +63,9 @@ class hispec(Instrument):
 
         #AO parameters
         self.nactuators = 32. - 2.0 #The number of DM actuators in one direction
-        self.fiber_contrast_gain = 3. #The gain in congtrast thanks to the fiber. 
+        self.fiber_contrast_gain = 3. #The gain in contrast thanks to the fiber. 
         self.p_law_dh = -2.0 #The some power law constant Dimitri should explain. 
-        self.ao_filter = 'bessell-I' #Available AO filters
+        self.ao_filter = 'bessell-I'
         self.d_ao = 0.15 * u.m
         self.area_ao = np.pi*(self.d_ao/2)**2
         
@@ -85,8 +85,11 @@ class hispec(Instrument):
         self.ao_mag = None
         self.mode = None
         self.zenith = None # in degrees
+        self.vortex_charge = None      # for vfn only
+        self.host_diameter= 0.0*u.mas  # for vfn only (default 0 disables geometric leak.)
+        self.ttarcsec = (2.0*u.mas).to(u.arcsec)   # for vfn only (assume 2mas jitter for MODHIS by default)
     
-    def set_observing_mode(self,exposure_time,n_exposures,sci_filter,wvs,dwvs=None, mode="off-axis",zenith=0):
+    def set_observing_mode(self,exposure_time,n_exposures,sci_filter,wvs,dwvs=None, vortex_charge = None,mode="off-axis",zenith=0):
         '''
         Sets the current observing setup
         '''
@@ -96,15 +99,20 @@ class hispec(Instrument):
 
         self.set_current_filter(sci_filter)
 
-        if mode.lower() not in ['off-axis', 'on-axis', 'photonic_lantern']:
-            raise ValueError("'mode' must be 'off-axis', 'on-axis', or 'photonic_lantern'")
+        if mode.lower() not in ['off-axis', 'on-axis', 'photonic_lantern',"vfn"]:
+            raise ValueError("'mode' must be 'off-axis', 'on-axis', 'vfn' or 'photonic_lantern'")
 
-        self.mode = mode.lower()
+        self.mode = mode.lower()    # lower() to remove errors from common VFN capitalization
 
         if self.mode == 'photonic_lantern':
             self.n_ch = 7 #Number of output channels for the photonic lantern
         else:
             self.n_ch = None
+        # Set vortex charge for vfn mode
+        if self.mode == 'vfn' and (vortex_charge not in [1,2]):
+            raise ValueError("'vfn' mode requires a 'vortex_charge' of 1 or 2")
+        elif self.mode == 'vfn':
+            self.vortex_charge = vortex_charge
 
         self.current_wvs = wvs
         if dwvs is None:
@@ -112,7 +120,7 @@ class hispec(Instrument):
             dwvs[0] = dwvs[1]
         self.current_dwvs = dwvs
 
-        #Set the line spread function with to be the 
+        #Set the line spread function width to be the 
         self.lsf_width = self.get_wavelength_bounds(sci_filter)[1]/self.current_R
 
         self.zenith = zenith
@@ -146,7 +154,7 @@ class hispec(Instrument):
         if self.current_filter is None:
             print("You need to set the current_filter property. \nReturning -1")
         if self.current_filter not in self.filters:
-            print("You selected filter is not valid. Please choose from {}\n Returning -1".format(filter_options.keys()))
+            print("Your filter {} is not in the filter list: {}\n Returning -1".format(self.current_filter,self.filters))
             return -1
 
         #Pick the right filter based on the .current_filter property
@@ -177,7 +185,11 @@ class hispec(Instrument):
         th_ao = np.interp(wvs, th_wvs, np.prod(th_data[2:13], axis=0)) # AO throughput 
         th_fiu = np.interp(wvs, th_wvs, np.prod(th_data[14:29], axis=0)) # KPIC throughput
         #th_fcd = np.interp(wvs, th_wvs, th_data[30]) # Fiber Dynamic Coupling (need function to scale with Strehl/NGS, currently unused)
+        
+        #TODO: Does the thoughput budget include ideal coupling efficiency to fiber? Dan says it should be 0.68. 
+        #
         th_fiber = np.interp(wvs, th_wvs, np.prod(th_data[31:38], axis=0)) # Fiber throughput (excluding fcd above)
+        
         #th_fiber *= self.get_dar_coupling_throughput(wvs) #MMB Commenting this out until astropy units are included. 
         th_spec = np.interp(wvs, th_wvs, np.prod(th_data[39:51], axis=0)) # HISPEC - SPEC throughput
 
@@ -187,8 +199,13 @@ class hispec(Instrument):
         else:
             # Set to 1 to ignore separation effects
             th_planet = 1
+        
+        #TODO: figure out if SR is needed for VFN (thinking it's not)
+        if self.mode == 'vfn':
+            SR = np.ones(SR.shape)
+        else: 
+            SR = self.compute_SR(wvs)
 
-        SR = self.compute_SR(wvs)
 
         th_inst = th_ao * th_fiu * th_fiber * th_planet * th_spec * SR
 
@@ -250,6 +267,13 @@ class hispec(Instrument):
         ao_wfe=np.genfromtxt(path+'aowfe/hispec_modhis_ao_errorbudgetb.csv', delimiter=',',skip_header=1)
         ao_rmag = ao_wfe[:,0]
 
+        if self.mode == 'vfn':
+            # For VFN, rescale WFE to use telemetry values from the PyWFS
+            # The default table includes some errors that VFN doesn't care about
+              # Based on 11/2021 telemetry, PyWFS has hit 85nm RMS WF residuals so
+              # let's set that as the best value for now and then scale up from there
+            ao_wfe[:,6] = ao_wfe[:,6] * 85/ao_wfe[0,6]
+
         # if isinstance(self, hispec):
         ao_wfe_ngs=ao_wfe[:,2] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
         ao_wfe_lgs=ao_wfe[:,3] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
@@ -299,8 +323,8 @@ class hispec(Instrument):
         Returns the contrast for a given list of separations. 
 
         Inputs: 
-        separations     - A list of separations at which to calculate the speckle noise in arcseconds [float list length n]. Assumes these are sorted. 
-        ao_mag          - The magnitude in the ao band, here assumed to be I-band
+        separations  - A list of separations at which to calculate the speckle noise in arcseconds [float list length n]. Assumes these are sorted. 
+        ao_mag       - The magnitude in the ao band, here assumed to be I-band
         wvs          - A list of wavelengths in microns [float length m]
         telescope    - A psisim telescope object. 
 
@@ -309,91 +333,129 @@ class hispec(Instrument):
 
         '''
 
+        #TODO: decide if PIAA will be optional via flag or permanent
+        #TODO: add ADC residuals effect
+        #TODO: @Max, why feed "filter", "star_spt" if not used. Why feed "telescope" if already available from self.telescope?
+
+        if self.mode != 'vfn':
+            print("Warning: only 'vfn' mode has been confirmed")
+        
         if self.mode == "on-axis":
             return np.ones([np.size(separations),np.size(wvs)])
         
         if np.size(wvs) < 2:
             wvs = np.array(wvs)
 
-        #Get the Strehl Ratio
-        SR = self.compute_SR(wvs)
+        if self.mode == "off-axis":
+            #-- Deal with nominal MODHIS mode (fiber centered on planet)
+            #TODO: this was copied from KPIC instrument. Check if any mods are needed for MODHIS
 
-        p_law_kolmogorov = -11./3
-        p_law_ao_coro_filter = self.p_law_dh#-p_law_kolmogorov 
+            #Get the Strehl Ratio
+            SR = self.compute_SR(wvs)
 
-        r0 = 0.55e-6/(telescope.seeing.to(u.arcsecond).value/206265) * u.m #Easiest to ditch the seeing unit here. 
+            p_law_kolmogorov = -11./3
+            p_law_ao_coro_filter = self.p_law_dh#-p_law_kolmogorov 
 
-        #The AO control radius in units of lambda/D
-        cutoff = self.nactuators/2
+            r0 = 0.55e-6/(telescope.seeing.to(u.arcsecond).value/206265) * u.m #Easiest to ditch the seeing unit here. 
 
-        contrast = np.zeros([np.size(separations),np.size(wvs)])
+            #The AO control radius in units of lambda/D
+            cutoff = self.nactuators/2
 
-        if np.size(separations) < 2:
-            separations = np.array([separations.value])*separations.unit
+            contrast = np.zeros([np.size(separations),np.size(wvs)])
 
-        # #Do this by wavelength
-        # for i, wv in enumerate(wvs):
-        #     ang_sep_resel_in = separations/206265/u.arcsecond*telescope.diameter/wv.to(u.m) #Convert separations from arcseconds to units of lambda/D
+            if np.size(separations) < 2:
+                separations = np.array([separations.value])*separations.unit
 
-        #     if isinstance(ang_sep_resel_in.value,float):
-        #         ang_sep_resel_in = [ang_sep_resel_in]
-        #         index_in = 1
-        #     else:
-        #         index_in = np.max(np.where(ang_sep_resel_in.value < cutoff))
-
-        #     ang_sep_resel_step=0.1
-        #     ang_sep_resel=np.arange(0,10000,ang_sep_resel_step)
-        #     index=np.squeeze(np.where(ang_sep_resel == cutoff))
-
-        #     #Dimitri to put in references to this math
-        #     r0_sc = r0 * (wv/(0.55*u.micron))**(6./5)
-        #     w_halo = telescope.diameter / r0_sc
-
-        #     f_halo = np.pi*(1-SR[i])*0.488/w_halo**2 * (1+11./6*(ang_sep_resel/w_halo)**2)**(-11/6.)
-
-        #     contrast[:,i] = np.interp(ang_sep_resel_in,ang_sep_resel,f_halo)
-
-        #     contrast_inside = f_halo[index]*(ang_sep_resel/ang_sep_resel[index])**p_law_ao_coro_filter
-        #     contrast[:,i][:index_in] = np.interp(ang_sep_resel_in[:index_in],ang_sep_resel,contrast_inside)
-
-            #Inside the control radius, we modify the raw contrast
-            # contrast[:,i][:index] = contrast[:,i][index]
-        
-        #Dimitri to put in references to this math
-        r0_sc = r0 * (wvs/(0.55*u.micron))**(6./5)
-        w_halo = telescope.diameter / r0_sc
-        
-        for i,sep in enumerate(separations):
-            ang_sep_resel_in = sep.to(u.rad).value * telescope.diameter.to(u.m)/wvs.to(u.m) #Convert separations from arcseconds to units of lambda/D
-
-            # import pdb; pdb.set_trace()
-            f_halo = np.pi*(1-SR)*0.488/w_halo**2 * (1+11./6*(ang_sep_resel_in/w_halo)**2)**(-11/6.)
-
+            #Dimitri to put in references to this math
+            r0_sc = r0 * (wvs/(0.55*u.micron))**(6./5)
+            w_halo = telescope.diameter / r0_sc
             
-            contrast_at_cutoff = np.pi*(1-SR)*0.488/w_halo**2 * (1+11./6*(cutoff/w_halo)**2)**(-11/6.)
-            #Fill in the contrast array
-            contrast[i,:] = f_halo
+            for i,sep in enumerate(separations):
+                ang_sep_resel_in = sep/206265/u.arcsecond*telescope.diameter/wvs.to(u.m) #Convert separtiona from arcsec to units of lam/D
 
-            biggest_ang_sep = np.abs(ang_sep_resel_in - cutoff) == np.min(np.abs(ang_sep_resel_in - cutoff))
+                f_halo = np.pi*(1-SR)*0.488/w_halo**2 * (1+11./6*(ang_sep_resel_in/w_halo)**2)**(-11/6.)
 
-            contrast[i][ang_sep_resel_in < cutoff] = contrast_at_cutoff[ang_sep_resel_in < cutoff]*(ang_sep_resel_in[ang_sep_resel_in < cutoff]/cutoff)**p_law_ao_coro_filter
-        # import pdb;pdb.set_trace()
-        #Set the contrast inide the AO control radius
-        # import pdb;pdb.set_trace()
-        # if np.size(separations) < 2:
-        #     contrast[ang_sep_resel_in < cutoff] = np.repeat(contrast[biggest_ang_sep,None],contrast.shape[1],axis=1)[ang_sep_resel_in < cutoff]*(ang_sep_resel_in[ang_sep_resel_in < cutoff]/cutoff)**p_law_ao_coro_filter
-        # elif np.size(wvs) < 2:
-        #     contrast[ang_sep_resel_in < cutoff] = np.repeat(contrast[None,biggest_ang_sep],contrast.shape[0],axis=0)[ang_sep_resel_in < cutoff]*(ang_sep_resel_in[ang_sep_resel_in < cutoff]/cutoff)**p_law_ao_coro_filter
-        # else: 
-        #     contrast[ang_sep_resel_in < cutoff] = contrast[biggest_ang_sep]*(ang_sep_resel_in[ang_sep_resel_in < cutoff]/cutoff)**p_law_ao_coro_filter
-        
-        #Apply the fiber contrast gain
-        contrast /= self.fiber_contrast_gain
+                contrast_at_cutoff = np.pi*(1-SR)*0.488/w_halo**2 * (1+11./6*(cutoff/w_halo)**2)**(-11/6.)
+                #Fill in the contrast array
+                contrast[i,:] = f_halo
 
-        #Make sure nothing is greater than 1. 
-        contrast[contrast>1] = 1.
+                biggest_ang_sep = np.abs(ang_sep_resel_in - cutoff) == np.min(np.abs(ang_sep_resel_in - cutoff))
 
-        return contrast
+                contrast[i][ang_sep_resel_in < cutoff] = contrast_at_cutoff[ang_sep_resel_in < cutoff]*(ang_sep_resel_in[ang_sep_resel_in < cutoff]/cutoff)**p_law_ao_coro_filter
+            
+            #Apply the fiber contrast gain - To confirm: is this the coupling efficiency of the speckle to the fiber? 
+            contrast /= self.fiber_contrast_gain
+
+            #Make sure nothing is greater than 1. 
+            contrast[contrast>1] = 1.
+            
+            return contrast
+
+        elif self.mode == "vfn":
+            #-- Deal with VFN mode
+
+            #-- Determine WFE
+            #Get the AO WFE as a function of rmag
+            ao_rmag,ao_wfe_ngs,ao_wfe_lgs = self.load_scale_aowfe(telescope.seeing,telescope.airmass,
+                                                site_median_seeing=telescope.median_seeing)
+
+            #We take the minimum wavefront error between natural guide star and laser guide star errors
+            ao_wfe = np.min([np.interp(ao_mag,ao_rmag, ao_wfe_ngs).value,np.interp(ao_mag,ao_rmag, ao_wfe_lgs).value]) * u.nm
+
+            #-- Get Stellar leakage due to WFE
+            #Pick the WFE coefficient based on the vortex charge. Coeff values emprically determined in simulation
+            if self.vortex_charge == 1:
+                wfe_coeff = 0.840       # Updated on 1/11/21 based on 6/17/19 pyWFS data
+            elif self.vortex_charge == 2:
+                wfe_coeff = 1.650       # Updated on 1/11/21 based on 6/17/19 pyWFS data
+
+            #Approximate contrast from WFE
+            contrast = (wfe_coeff * ao_wfe.to(u.micron) / wvs)**(2.) # * self.vortex_charge)
+            
+            #-- Get Stellar leakage due to Tip/Tilt Jitter
+            #TODO: Use AO_mag to determine T/T residuals 
+            # Convert jitter to lam/D
+            ttlamD = self.ttarcsec.value / (wvs.to(u.m)/telescope.diameter * 206265)
+            
+            # Use leakage approx. from Ruane et. al 2019 
+                # https://arxiv.org/pdf/1908.09780.pdf      Eq. 3
+            ttnull = (ttlamD)**(2*self.vortex_charge)
+            
+            # Add to total contrast
+            contrast += ttnull
+                
+            #-- Get Stellar leakage due to finite sized star (Geometric leakage)
+              # Assumes user has already set host diameter with set_vfn_host_diameter()
+              # Equation and coefficients are from Ruante et. al 2019
+                # https://arxiv.org/pdf/1908.09780.pdf     fig 7c
+            # Convert host_diameter to units of lambda/D
+            host_diam_LoD = self.host_diameter.value / (wvs.to(u.m)/telescope.diameter * 206265)
+            
+            # Define Coefficients for geometric leakage equation
+            if self.vortex_charge == 1:
+                geo_coeff = 3.5
+            elif self.vortex_charge == 2:
+                geo_coeff = 4.2
+            # Compute leakage
+            geonull = (host_diam_LoD / geo_coeff)**(2*self.vortex_charge)
+            
+            # Add to total contrast
+            contrast += geonull
+                
+            #-- Make sure contrast has the expected output format
+            #Null is independent of the planet separation; use np.tile to replicate results at all seps
+            contrast = np.tile(contrast, (np.size(separations),1))
+
+            #convert to ndarray for consistency with contrast returned by other modes
+            contrast = np.array(contrast)
+            
+            #Make sure nothing is greater than 1. 
+            contrast[contrast>1] = 1.
+            
+            return contrast
+
+        else:
+            raise ValueError("'%s' is a not a supported 'mode'" % (self.mode))
 
     def get_planet_throughput(self,separations,wvs):
         '''
@@ -407,34 +469,76 @@ class hispec(Instrument):
         get_planet_throughput - Either an array of length [n,1] if only one wavelength passed, or shape [n,m]
         '''
 
-        ## TODO: Add in coro. effects; Currently returns 1 since no sep.-dependent modes are implemented yet
-            # See kpic_phaseII for implementation reference
-        th_planet = 1 * np.ones([np.size(separations), np.size(wvs)]) 
+        #TODO: Implement PIAA improvement as flag for VFN mode
+        #TODO: add in ADC residual effects
+        if self.mode == 'vfn':
+            path = self.telescope.path
+
+            # load ideal VFN coupling curves
+            th_vfn_ideal = np.genfromtxt(path+'VFN/Charge%d_Ideal.txt'%(self.vortex_charge), delimiter=',', skip_header=0)
+
+            if np.size(separations) < 2:
+                separations = np.array([separations.value])*separations.unit
+
+            th_planet = np.zeros([np.size(separations),np.size(wvs)])
+            for i,sep in enumerate(separations):
+                ang_sep_resel_in = sep.value/(wvs.to(u.m)/self.telescope.diameter * 206265) #Convert seps from arcsec to units of lam/D
+                th_planet[i,:] = np.interp(ang_sep_resel_in, th_vfn_ideal[:,0], th_vfn_ideal[:,1])
+
+        elif self.mode in ['on-axis', 'off-axis']:
+            # TODO: for on-axis mode, can use VFN charge-0 coupling curve
+            
+            # Account for planet-specific injection efficiency into fiber
+                # eg. if coronagraph has separation-dependent coupling, apply here
+            th_planet = 1 * np.ones([np.size(separations), np.size(wvs)]) # x1 for now since no coro.
         
+        else:
+            raise ValueError("'%s' is a not a supported 'mode'" % (self.mode))
+
         return th_planet
 
-    def get_dar_coupling_throughput(self, wvs, wvs0=None):
-        """
-        Gets the relative loss in fiber coupling due to DAR (normalized to 1)
+    def set_vfn_host_diameter(self,host_size_in_mas):
+        '''
+        Sets the host_diameter instance variable in units of arcsec
+        
+        Inputs:
+        host_size_in_mas - (Astropy Quantity - u.mas) Angular diameter of the host star
+        '''
+        self.host_diameter = host_size_in_mas.to(u.arcsec)
+    
+    def set_vfn_tt_jitter(self,tt_jitter_in_mas):
+        '''
+        Sets the ttarcsec instance variable in units of arcsec. This jitter is used
+          to determine the VFN null depth tip/tilt leakage term.
+        
+        Inputs:
+        tt_jitter_in_mas - (Astropy Quantity - u.mas) RMS TT jitter for the system
+        '''
+        self.ttarcsec = tt_jitter_in_mas.to(u.arcsec)
 
-        Args:
-            wvs (np.array of float): wavelengths to consider
-            wvs0 (float, optiona): the reference wavelength where fiber coupling is maximized. 
-                                    Assumed to be the mean of the input wavelengths if not passed in
+    ## No DAR is expected with a decent ADC. 
+    # def get_dar_coupling_throughput(self, wvs, wvs0=None):
+    #     """
+    #     Gets the relative loss in fiber coupling due to DAR (normalized to 1)
 
-        Returns:
-            np.array of float: the relative loss in throughput in fiber coupling due to DAR (normalized to 1)
-        """
-        if wvs0 is None:
-            wvs0 = np.mean(wvs)
+    #     Args:
+    #         wvs (np.array of float): wavelengths to consider
+    #         wvs0 (float, optiona): the reference wavelength where fiber coupling is maximized. 
+    #                                 Assumed to be the mean of the input wavelengths if not passed in
 
-        n = self.telescope.get_nair(wvs)
-        n0 = self.telescope.get_nair(wvs0)
+    #     Returns:
+    #         np.array of float: the relative loss in throughput in fiber coupling due to DAR (normalized to 1)
+    #     """
+    #     if wvs0 is None:
+    #         wvs0 = np.mean(wvs)
 
-        dar = np.abs(nair.compute_dar(n, n0, np.radians(self.zenith)))
+    #     n = self.telescope.get_nair(wvs)
+    #     n0 = self.telescope.get_nair(wvs0)
 
-        lam_d = (wvs * u.um) / (self.telescope.diameter.to(u.um)) * 206265 * 1000
+    #     dar = np.abs(nair.compute_dar(n, n0, np.radians(self.zenith)))
 
-        coupling_th = np.interp(dar/lam_d, self.fiber_coupling['sep'], self.fiber_coupling['eta'], right=0)
+    #     lam_d = (wvs * u.um) / (self.telescope.diameter.to(u.um)) * 206265 * 1000
 
-        return coupling_th
+    #     coupling_th = np.interp(dar/lam_d, self.fiber_coupling['sep'], self.fiber_coupling['eta'], right=0)
+
+    #     return coupling_th

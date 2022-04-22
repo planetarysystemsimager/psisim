@@ -114,7 +114,6 @@ class Spectrum():
 
         return self.spectrum
        
-
     def apply_doppler_shift(self,delta_wv,rv_shift):
         '''
         A function to apply a doppler shift to a given spectrum
@@ -190,7 +189,6 @@ def load_picaso_opacity(dbname=None,wave_range=None):
     # dbname = os.path.join(opacity_folder,dbname)
     print("Loading an opacity file from {}".format(dbname)) 
     return jdi.opannection(filename_db=dbname,wave_range=wave_range)
-
 
 def generate_picaso_inputs(planet_table_entry, planet_type, opacity,clouds=True, planet_mh=1, stellar_mh=0.0122, planet_teq=None, verbose=False):
     '''
