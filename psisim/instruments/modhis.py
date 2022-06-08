@@ -6,7 +6,6 @@ import astropy.units as u
 import astropy.constants as constants
 import pysynphot as ps
 import warnings
-from astropy.modeling.blackbody import blackbody_lambda, blackbody_nu
 from astropy.modeling.models import BlackBody
 
 import psisim
@@ -224,11 +223,8 @@ class modhis(hispec):
         '''
         Returns the instrument background at each wavelength in units of photons/s/Angstrom/arcsecond**2
         '''
-        # TODO: blackbody_lambda is deprecated, change to BlackBody
-        #bb_lam = BlackBody(self.temperature,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
-        #inst_therm = bb_lam(wvs)
-
-        inst_therm = blackbody_lambda(wvs, self.temperature)
+        bb_lam = BlackBody(self.temperature,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
+        inst_therm = bb_lam(wvs)
         inst_therm *= solidangle
         inst_therm = inst_therm.to(u.ph/(u.micron * u.s * u.cm**2),equivalencies=u.spectral_density(wvs)) * self.area_ao.to(u.cm**2)
         inst_therm *= self.get_inst_emissivity(wvs)

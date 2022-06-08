@@ -6,7 +6,6 @@ import astropy.units as u
 import astropy.constants as constants
 import pysynphot as ps
 import warnings
-from astropy.modeling.blackbody import blackbody_lambda, blackbody_nu
 from astropy.modeling.models import BlackBody
 
 import psisim
