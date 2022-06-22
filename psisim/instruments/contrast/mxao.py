@@ -25,6 +25,12 @@ def run_aosystem(conf_fn,
                             text=True,
                             capture_output=True,
                             )
+    #print('output:', output.stdout)
+
+
+    # FIXME  can we always turn output into a table?
+
+
     return output
 
 def test_psi():
@@ -50,12 +56,87 @@ def test_psi():
     pylab.show()
     
 
+def test_modes():
+    # load configuration
+    config_fn = 'PSI.conf'
+    config = load_config(config_fn)
+
+    # udpate configuration
+    print(config)
+    #config['global']['mode'] = 'ErrorBudget'
+    #config['global']['mode'] = 'C0Var'
+    #config['global']['mode'] = 'C0Con'
+    #config['global']['mode'] = 'CVarAll'
+    #config['global']['mode'] = 'CConAll'
+    #config['global']['mode'] = 'temporalPSD'
+    config['global']['mode'] = 'temporalPSDGrid'
+
+    # output configuration
+    out_config_fn = 'PSI2.conf'
+    write_config(out_config_fn, config)
+
+    # run simulator
+    #output = run_aosystem(config_fn) # TEMP
+    output = run_aosystem(out_config_fn)
+    print('output:', output.stdout)
+
+    # parse output to table
+    import astropy.table
+    if config['global']['mode'] == 'ErrorBudget':
+        t = astropy.table.Table.read(output.stdout,
+                                     format='ascii.commented_header',
+                                     )
+    elif config['global']['mode'] == 'C0Var': # FIXME  handle 1,2...
+        t = astropy.table.Table.read(output.stdout,
+                                     format='ascii',
+                                     names=['i',config['global']['mode']],
+                                     )
+    elif config['global']['mode'] == 'C0Con': # FIXME  handle 1,2...
+        t = astropy.table.Table.read(output.stdout,
+                                     format='ascii',
+                                     names=['i',config['global']['mode']],
+                                     )
+    elif config['global']['mode'] == 'CVarAll':
+        t = astropy.table.Table.read(output.stdout,
+                                     format='ascii',
+                                     names=['i']+['C{}Var'.format(i) for i in range(8)],
+                                     )
+    elif config['global']['mode'] == 'CConAll':
+        t = astropy.table.Table.read(output.stdout,
+                                     format='ascii',
+                                     names=['i']+['C{}Con'.format(i) for i in range(8)],
+                                     )
+    elif config['global']['mode'] == 'temporalPSD':
+        # process header output that starts with #, until we get a line with a bunch of ###
+        lines = output.stdout.splitlines()
+        delimited = ['#'*3 in line for line in lines] # boolean array of whether line is delimiter
+        idels = [i for i, x in enumerate(delimited) if x] # list of delimiter indices
+        # split header and computation output
+        hdrtxt = lines[0:idels[0]]
+        outtxt = lines[idels[0]+1:]
+        print('\n'.join(hdrtxt))
+        # parse computation output
+        t = astropy.table.Table.read('\n'.join(outtxt),
+                                     format='ascii.commented_header',
+                                     )
+    elif config['global']['mode'] == 'temporalPSDGrid':
+        raise NotImplementedError
+    elif config['global']['mode'] == 'temporalPSDGridAnalyze':
+        raise NotImplementedError
+    else:
+        raise NotImplementedError
+
+    # show output
+    print(t)
+
+
 def load_config(config_fn):
     import configparser
     config = configparser.ConfigParser(default_section='default',
                                        inline_comment_prefixes='#',
                                        #strict=False,
                                        )
+    config.optionxform = lambda option: option # don't convert to lowercase
     with open(config_fn) as f:
         file_content = '[global]\n' + f.read()
     config.read_string(file_content)
@@ -85,7 +166,7 @@ def test_write_config():
 
 
 if __name__=='__main__':
-    test_psi()
-    test_load_config()
-    test_write_config()
-
+    #test_psi()
+    #test_load_config()
+    #test_write_config()
+    test_modes()
