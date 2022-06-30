@@ -43,7 +43,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
         #Get the stellar spectrum at the wavelengths of interest. 
         #The stellar spectrum will be in units of photons/s/cm^2/angstrom
         stellar_spectrum = spectrum.get_stellar_spectrum(planet_table_entry,wvs,instrument.current_R,
-            verbose=verbose)
+            verbose=verbose).spectrum
     else: 
         stellar_spectrum = copy.deepcopy(stellar_spec)
     #TODO: Add check that the input stellar spectrum as the correct units
