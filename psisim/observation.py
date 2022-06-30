@@ -256,7 +256,7 @@ def get_noise_components(separation,star_aomag,instrument,wvs,star_spt,stellar_s
     return speckle_noise,read_noise,photon_noise
 
 def simulate_observation_set(telescope, instrument, planet_table,planet_spectra,wvs,spectra_R,inject_noise=False,
-    post_processing_gain=10,return_noise_components=False):
+    post_processing_gain=10,return_noise_components=False,stellar_spec=None):
     '''
     Simulates observations of multiple planets, with the same observing configs
     
@@ -283,14 +283,15 @@ def simulate_observation_set(telescope, instrument, planet_table,planet_spectra,
         if return_noise_components:
             new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar,_,F_lambda_noise_components = simulate_observation(telescope,instrument,
                 planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing_gain,
-                return_noise_components=return_noise_components)
+                return_noise_components=return_noise_components,stellar_spec=stellar_spec[i])
             F_lambdas.append(new_F_lambda.value)
             F_lambdas_stellar.append(new_F_lambda_stellar.value)
             F_lambda_errors.append(new_F_lambda_errors.value)
             noise_components.append(np.array(F_lambda_noise_components/F_lambda_noise_components.unit))            
         else:
             new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar = simulate_observation(telescope,instrument,
-                planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing_gain)
+                planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing_gain,
+                stellar_spec=stellar_spec[i])
             F_lambdas.append(new_F_lambda.value)
             F_lambdas_stellar.append(new_F_lambda_stellar.value)
             F_lambda_errors.append(new_F_lambda_errors.value)
