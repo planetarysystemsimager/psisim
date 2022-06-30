@@ -65,9 +65,9 @@ class Telescope():
         '''
         
         if isinstance(wvs,float):
-            return 0
+            return 0*(u.ph/(u.s*u.cm**2*u.AA))
         else:
-            return np.zeros(len(wvs))
+            return np.zeros(len(wvs))*(u.ph/(u.s*u.cm**2*u.AA))
 
     def get_telescope_emission(self,wvs):
         '''

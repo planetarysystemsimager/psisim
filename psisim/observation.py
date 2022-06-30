@@ -137,7 +137,8 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
         detector_thermal_flux = 1e4*u.AA/u.micron*intermediate_thermal_spectrum(instrument.current_wvs)*instrument.current_dwvs*thermal_flux.unit
 
     #Multiply by the exposure time
-    detector_spectrum *= instrument.exposure_time #The detector spectrum is now in e-
+    detector_spectrum *= instrument.exposure_time 
+    detector_spectrum = detector_spectrum.to(u.electron*u.m/u.m)#The detector spectrum is now in e-
     detector_stellar_spectrum *= instrument.exposure_time #The detector spectrum is now in e-
     detector_thermal_flux *= instrument.exposure_time
 
@@ -164,9 +165,6 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     #Apply a post-processing gain
     speckle_noise /= post_processing_gain
 
-    print(speckle_noise.unit)
-    print(read_noise.unit)
-    print(photon_noise.unit)
     ## Sum it all up
     total_noise = np.sqrt(speckle_noise**2+read_noise**2+photon_noise**2)
 
@@ -187,7 +185,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     #TODO: Currently everything is in e-. We likely want it in a different unit at the end. 
     
     if return_noise_components:
-        return detector_spectrum, total_noise, detector_stellar_spectrum,detector_thermal_flux, np.array([speckle_noise,read_noise,photon_noise])
+        return detector_spectrum, total_noise, detector_stellar_spectrum,detector_thermal_flux, np.array([speckle_noise.value,read_noise.value,photon_noise.value])*u.electron
     else:
         return detector_spectrum, total_noise, detector_stellar_spectrum,detector_thermal_flux
 
@@ -283,25 +281,24 @@ def simulate_observation_set(telescope, instrument, planet_table,planet_spectra,
 
     for i,planet in enumerate(planet_table):
         if return_noise_components:
-            new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar,F_lambda_noise_components = simulate_observation(telescope,instrument,
+            new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar,_,F_lambda_noise_components = simulate_observation(telescope,instrument,
                 planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing_gain,
                 return_noise_components=return_noise_components)
-            F_lambdas.append(new_F_lambda)
-            F_lambdas_stellar.append(new_F_lambda_stellar)
-            F_lambda_errors.append(new_F_lambda_errors)
-            noise_components.append(F_lambda_noise_components)
+            F_lambdas.append(new_F_lambda.value)
+            F_lambdas_stellar.append(new_F_lambda_stellar.value)
+            F_lambda_errors.append(new_F_lambda_errors.value)
+            noise_components.append(np.array(F_lambda_noise_components/F_lambda_noise_components.unit))            
         else:
             new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar = simulate_observation(telescope,instrument,
                 planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing_gain)
-            F_lambdas.append(new_F_lambda)
-            F_lambdas_stellar.append(new_F_lambda_stellar)
-            F_lambda_errors.append(new_F_lambda_errors)
+            F_lambdas.append(new_F_lambda.value)
+            F_lambdas_stellar.append(new_F_lambda_stellar.value)
+            F_lambda_errors.append(new_F_lambda_errors.value)
 
-
-    F_lambdas = np.array(F_lambdas)
-    F_lambda_stellar = np.array(F_lambdas_stellar)
-    F_lambda_errors = np.array(F_lambda_errors)
-    noise_components = np.array(noise_components)
+    F_lambdas = np.array(F_lambdas)*new_F_lambda.unit
+    F_lambdas_stellar = np.array(F_lambdas_stellar)*new_F_lambda_stellar.unit
+    F_lambda_errors = np.array(F_lambda_errors)*new_F_lambda_errors.unit
+    noise_components = np.array(noise_components)*F_lambda_noise_components.unit
     
     if return_noise_components:
         return F_lambdas,F_lambda_errors,F_lambdas_stellar, noise_components
