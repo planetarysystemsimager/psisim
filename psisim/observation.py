@@ -107,11 +107,22 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
         stellar_spectrum = gaussian_filter(stellar_spectrum, lsf_sigma.value) * stellar_spectrum.unit
         scaled_spectrum = gaussian_filter(scaled_spectrum, lsf_sigma.value) * scaled_spectrum.unit
 
-    #Downsample to instrument wavelength sampling
-    intermediate_spectrum = si.interp1d(wvs, scaled_spectrum,fill_value="extrapolate",bounds_error=False)
-    intermediate_stellar_spectrum = si.interp1d(wvs, stellar_spectrum,fill_value="extrapolate",bounds_error=False)
-    intermediate_thermal_spectrum = si.interp1d(wvs, thermal_flux,fill_value="extrapolate",bounds_error=False)
-    
+    #wvs may be one-element array if broadband photometry is being conducted ex. simulation of GPI instrument
+    if len(wvs) > 1:
+        #Downsample to instrument wavelength sampling
+        intermediate_spectrum = si.interp1d(wvs, scaled_spectrum,fill_value="extrapolate",bounds_error=False)
+        intermediate_stellar_spectrum = si.interp1d(wvs, stellar_spectrum,fill_value="extrapolate",bounds_error=False)
+        intermediate_thermal_spectrum = si.interp1d(wvs, thermal_flux,fill_value="extrapolate",bounds_error=False)
+    elif len(wvs) == 1:
+        def return_intermediate_spectrum(wvs):
+            return scaled_spectrum[0].value
+        def return_intermediate_stellar_spectrum(wvs):
+            return stellar_spectrum[0].value
+        def return_intermediate_thermal_spectrum(wvs):
+            return thermal_flux[0].value
+        intermediate_spectrum = return_intermediate_spectrum
+        intermediate_stellar_spectrum = return_intermediate_stellar_spectrum
+        intermediate_thermal_spectrum = return_intermediate_thermal_spectrum
     if integrate_delta_wv:
         detector_spectrum = []
         detector_stellar_spectrum = []
@@ -146,6 +157,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     detector_spectrum *= instrument.n_exposures
     detector_stellar_spectrum *= instrument.n_exposures
     detector_thermal_flux *= instrument.n_exposures
+    detector_stellar_spectrum = detector_stellar_spectrum.to(u.electron)
 
     #Calculate dark noise. 
     dark_current = instrument.dark_current*instrument.exposure_time*instrument.n_exposures*instrument.spatial_sampling
@@ -266,7 +278,7 @@ def simulate_observation_set(telescope, instrument, planet_table,planet_spectra,
     planet_table - a Universe planet table
     planet_spectra_list - A list of planet spectra. One for each entry in the planet table
     inject_noise - choose whether or not to inject noise into the spectrum now or not
-
+    stellar_spec - A list of stellar spectra. One for each entry in planet table
 
     Outputs: 
     F_lambdas, F_lambda_errors
@@ -280,9 +292,13 @@ def simulate_observation_set(telescope, instrument, planet_table,planet_spectra,
     noise_components = []
 
     for i,planet in enumerate(planet_table):
+        if isinstance(post_processing_gain,float) or isinstance(post_processing_gain,int):
+            post_processing = post_processing_gain
+        else:
+            post_processing = post_processing_gain[i]
         if return_noise_components:
             new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar,_,F_lambda_noise_components = simulate_observation(telescope,instrument,
-                planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing_gain,
+                planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing,
                 return_noise_components=return_noise_components,stellar_spec=stellar_spec[i])
             F_lambdas.append(new_F_lambda.value)
             F_lambdas_stellar.append(new_F_lambda_stellar.value)
@@ -290,7 +306,7 @@ def simulate_observation_set(telescope, instrument, planet_table,planet_spectra,
             noise_components.append(np.array(F_lambda_noise_components/F_lambda_noise_components.unit))            
         else:
             new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar = simulate_observation(telescope,instrument,
-                planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing_gain,
+                planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing,
                 stellar_spec=stellar_spec[i])
             F_lambdas.append(new_F_lambda.value)
             F_lambdas_stellar.append(new_F_lambda_stellar.value)
