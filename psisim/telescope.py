@@ -469,10 +469,8 @@ class GMT(Telescope):
             band (str): A photometric band. 
         
         '''
-        # From Dimitri's Code
-        throughput = {"CFHT-Y":0.91,"TwoMASS-J":0.91,"TwoMASS-H":0.91,"TwoMASS-K":0.91}.get(band,0.91)
         
-        return throughput*np.ones(np.shape(wvs))
+        return np.ones(np.shape(wvs)) * 0.13
     
     def get_telescope_emissivity(self,wvs,band="TwoMass-J"):
         '''
