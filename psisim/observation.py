@@ -149,7 +149,7 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
 
     #Multiply by the exposure time
     detector_spectrum *= instrument.exposure_time 
-    detector_spectrum = detector_spectrum.to(u.electron*u.m/u.m)#The detector spectrum is now in e-
+    detector_spectrum = detector_spectrum.to(u.electron)#The detector spectrum is now in e-
     detector_stellar_spectrum *= instrument.exposure_time #The detector spectrum is now in e-
     detector_thermal_flux *= instrument.exposure_time
 
@@ -290,37 +290,45 @@ def simulate_observation_set(telescope, instrument, planet_table,planet_spectra,
     F_lambdas_stellar = []
     F_lambda_errors = []
     noise_components = []
+    F_lambdas_thermal = []
 
+    if stellar_spec is not None:
+        stellar_spec = stellar_spec[i]
     for i,planet in enumerate(planet_table):
         if isinstance(post_processing_gain,float) or isinstance(post_processing_gain,int):
             post_processing = post_processing_gain
         else:
             post_processing = post_processing_gain[i]
+        if stellar_spec is not None:
+            stellar_spec = stellar_spec[i]
         if return_noise_components:
-            new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar,_,F_lambda_noise_components = simulate_observation(telescope,instrument,
+            new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar,new_F_lambdas_thermal,F_lambda_noise_components = simulate_observation(telescope,instrument,
                 planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing,
-                return_noise_components=return_noise_components,stellar_spec=stellar_spec[i])
+                return_noise_components=return_noise_components,stellar_spec=stellar_spec)
             F_lambdas.append(new_F_lambda.value)
             F_lambdas_stellar.append(new_F_lambda_stellar.value)
             F_lambda_errors.append(new_F_lambda_errors.value)
-            noise_components.append(np.array(F_lambda_noise_components/F_lambda_noise_components.unit))            
+            noise_components.append(np.array(F_lambda_noise_components/F_lambda_noise_components.unit)) 
+            F_lambdas_thermal.append(new_F_lambdas_thermal.value)           
         else:
-            new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar = simulate_observation(telescope,instrument,
+            new_F_lambda,new_F_lambda_errors,new_F_lambda_stellar,new_F_lambdas_thermal = simulate_observation(telescope,instrument,
                 planet,planet_spectra[i], wvs, spectra_R, inject_noise = inject_noise, post_processing_gain=post_processing,
-                stellar_spec=stellar_spec[i])
+                stellar_spec=stellar_spec)
             F_lambdas.append(new_F_lambda.value)
             F_lambdas_stellar.append(new_F_lambda_stellar.value)
             F_lambda_errors.append(new_F_lambda_errors.value)
+            F_lambdas_thermal.append(new_F_lambdas_thermal.value)
 
     F_lambdas = np.array(F_lambdas)*new_F_lambda.unit
     F_lambdas_stellar = np.array(F_lambdas_stellar)*new_F_lambda_stellar.unit
     F_lambda_errors = np.array(F_lambda_errors)*new_F_lambda_errors.unit
     noise_components = np.array(noise_components)*F_lambda_noise_components.unit
+    F_lambdas_thermal = np.array(F_lambdas_thermal)*new_F_lambdas_thermal.unit
     
     if return_noise_components:
-        return F_lambdas,F_lambda_errors,F_lambdas_stellar, noise_components
+        return F_lambdas,F_lambda_errors,F_lambdas_stellar, noise_components, F_lambdas_thermal
     else:
-        return F_lambdas,F_lambda_errors,F_lambdas_stellar
+        return F_lambdas,F_lambda_errors,F_lambdas_stellar,F_lambdas_thermal
 
 
 
