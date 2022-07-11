@@ -28,8 +28,8 @@ class PSI_Blue(Instrument):
         self.ao_filter = ['i']
         self.ao_filter2 = ['H']
 
-        self.IWA = 0.0055 #Inner working angle in arcseconds. Current value based on 1*lambda/D at 800nm
-        self.OWA = 1. #Outer working angle in arcseconds
+        self.IWA = 0.0055*u.arcsec #Inner working angle in arcseconds. Current value based on 1*lambda/D at 800nm
+        self.OWA = 1.*u.arcsec #Outer working angle in arcseconds
 
         if telescope is None:
             self.telescope = psisim.telescope.TMT()
@@ -199,10 +199,10 @@ class PSI_Red(PSI_Blue):
         super(PSI_Red,self).__init__()
 
         # The main instrument properties - static
-        self.read_noise = 0.
+        self.read_noise = 0.*u.electron
         self.gain = 1. #e-/ADU
-        self.dark_current = 0.
-        self.qe = 1. 
+        self.dark_current = 0.*u.electron/u.s
+        self.qe = 1.*u.electron/u.ph
 
         self.filters = ['K', 'L', 'M']
         self.ao_filter = ['i']
@@ -281,6 +281,6 @@ class PSI_Red(PSI_Blue):
         limit = sp(np.array([cntr_wv])*1e4) #Get the spectrum at the center wavelength (convert cntr_wv to angstrom)
 
         if isinstance(wvs,float):
-            return limit[0]
+            return limit[0]*u.ph/u.s/u.AA
         else:
-            return np.repeat(limit,len(wvs))
+            return np.repeat(limit,len(wvs))*u.ph/u.s/u.AA

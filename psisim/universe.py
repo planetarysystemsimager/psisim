@@ -5,6 +5,8 @@ from astropy.table import QTable, MaskedColumn
 import scipy.interpolate as si
 import pyvo
 import json
+from random import random
+from math import pi
 
 class Universe():
     '''
@@ -83,9 +85,9 @@ class ExoSims_Universe(Universe):
             ras.append(coord.ra.value)
             decs.append(coord.dec.value)
             distances.append(coord.distance.value)
-        ras = np.array(ras)
-        decs = np.array(decs)
-        distances = np.array(distances)
+        ras = np.array(ras)*u.deg
+        decs = np.array(decs)*u.deg
+        distances = np.array(distances)*u.pc
         star_names =  np.array([su.TargetList.Name[i] for i in su.plan2star])
         spts = np.array([su.TargetList.Spec[i] for i in su.plan2star])
         su.TargetList.stellar_mass() # generate masses if haven't
@@ -102,7 +104,7 @@ class ExoSims_Universe(Universe):
         host_Kmags = np.array([su.TargetList.Kmag[i] for i in su.plan2star])
         
         # guess the radius and gravity from Vmag and Teff. This is of questionable reliability
-        host_MVs = host_Vmags - 5 * np.log10(distances/10) # absolute V mag
+        host_MVs = host_Vmags - 5 * np.log10(distances.value/10) # absolute V mag
         host_lums = 10**(-(host_MVs-4.83)/2.5) # L/Lsun
         host_radii = (5800/host_teff.value)**2 * np.sqrt(host_lums)  *u.solRad# Rsun
         host_gravs = constants.G * host_mass/(host_radii**2)
@@ -115,6 +117,156 @@ class ExoSims_Universe(Universe):
 
         self.planets = planets_table
         
+class GPIES_Universe(Universe):
+    '''
+    A child class of Universe that is specifically for simulating planets around the stars studied in the GPIES survey.
+    '''
+
+    def __init__(self):
+        super(GPIES_Universe, self).__init__()
+        
+        self.planets = None
+
+    def simulate_GPIES_Universe(self):
+        '''
+        A function that uses GPIES data from https://arxiv.org/pdf/1904.05358.pdf Table 4 
+        '''
+
+        name = []
+        StarSpT = []
+        D = []
+        Imag = []
+        Hmag = []
+        MGroup = []
+        Age = []
+        starMass = []
+        f_Mass = []
+        
+        #Reading in GPIES stellar data
+        with open("../psisim/data/planetaryModels/GPIUniverse.txt") as file:
+            lines = file.readlines()
+            lines = lines[94:425]
+            for line in lines:
+                name += [line[0:16].rstrip()]
+                StarSpT += [line[41:43].rstrip()]
+                D += [line[60:68]]
+                Imag += [line[79:82]]
+                Hmag += [line[83:86]]
+                MGroup += [line[87:100].rstrip()]
+                Age += [line[101:104]]
+                starMass += [line[108:112]]
+                f_Mass += [line[113:114].rstrip()]
+        name = np.array(name)
+        StarSpT = np.array(StarSpT)
+        D = np.array(list(np.float_(D)))*u.parsec
+        Imag = np.array(list(np.float_(Imag)))
+        Hmag = np.array(list(np.float_(Hmag)))
+        MGroup = np.array(MGroup)
+        Age = np.array(list(np.float_(Age)))*u.megayear
+        starMass = np.array(list(np.float_(starMass)))*u.Msun
+        f_Mass = np.array(f_Mass)
+        
+        #Making table of stellar data
+        starData = [name, StarSpT, D, Imag, Hmag, MGroup, Age, starMass, f_Mass]
+        starLabels = ["Name", "StarSpT", "Distance", "Imag", "Hmag", "Moving Group", "StarAge", "StarMass", "f_Mass"]
+        stars = QTable(starData, names=starLabels)
+        
+        #Removing repeat rows from the GPIES stellar data
+        names = []
+        for i in reversed(range(len(stars))):
+            if stars[i][0] in names:
+                stars.remove_row(i)
+            names += [stars[i][0]]
+        ### Code not necessary for GPIES simulation use, but can add spectral type if necessary
+        #         for k in reversed(range(len(stars))):
+        #             if stars['StarSpT'][k] == '-':
+        #                 stars.remove_row(k)
+
+        #         SpT_I_V = np.loadtxt("./SpT_I-V.csv", dtype = str, skiprows = 0)
+        #         SpT = []
+        #         I_V = []
+        #         for i in SpT_I_V:
+        #             SpT += [i[0]]
+        #             I_V += [float(i[1])] 
+
+        #         for j in reversed(range(len(stars['StarSpT']))):    
+        #             if stars['StarSpT'][j] not in SpT:
+        #                 stars.remove_row(j)
+
+        #         Vmag = []
+        #         for p in range(len(stars['StarSpT'])):
+        #             for q in range(len(SpT)):
+        #                 if stars['StarSpT'][p] == SpT[q]:
+        #                     Vmag += [round(Imag[p] + I_V[q],2)]
+
+        #         stars['Vmag'] = Vmag           
+
+        masses = []
+        SMAs = []
+        starIndex = []
+        starNames = []
+        distances = []
+        SpTypes = []
+        Imags = []
+        Hmags = []
+        # Vmags = [] #This initialization is not be necessary in the current setup but there is commented code to find stellar V-mags
+        starMasses = []
+        Ages = []
+        #Using distributions from Nielsen et al. to decide how many companions each star has, and the companions' masses and SMAs
+        for i in np.arange(len(stars)):
+            probability = 1.26*(stars[i]['StarMass'].value/1.75)**1.15 #probability is interpreted as the number of companions a star will have; decimal is probability of (n+1)th companion
+            numPlanets = 1
+            probs = []
+            if probability > 1:
+                while probability > 1:
+                    numPlanets += 1
+                    probability -= 1
+                    probs += [1]
+            probs += [probability]
+            for j in probs:
+                    chances = [j,1-j]
+                    options = [True,False]
+                    sample = np.random.choice(a = options,p = chances)
+                    if sample == True:
+                        probMass = random()
+                        mass = (.47/(1-probMass))**(.917)*u.Mjup #Choosing mass of each companion
+                        while mass.value > 80:
+                            probMass = random()
+                            mass = (.47/(1-probMass))**(.917)*u.Mjup#Making sure companions are under 80Mjup
+                        masses += [mass.value]
+                        probSMA = random()*1.27
+                        SMA = (2.06/(1.27-probSMA))**(2.27)*u.au#Choosing companion SMAs
+                        SMAs += [SMA.value]
+                        starIndex += [i]
+                        starNames += [stars[i]['Name']]
+                        distances += [stars[i]['Distance']]
+                        SpTypes += [stars[i]['StarSpT']]
+                        Imags += [stars[i]['Imag']]
+                        Hmags += [stars[i]['Hmag']]
+                #                 Vmags += [stars[i]['Vmag']]
+                        Ages += [stars[i]['StarAge']]
+                        starMasses += [stars[i]['StarMass']]
+        separations = []
+        
+        #Finding the angular separation between companion and its host by generating random inclination angles and true anomalies
+        for j in masses:
+            rand = random()
+            theta = np.arccos(rand)*u.rad # inclination angle
+            nu = random()*pi*2*u.rad # true anomaly
+            d1 = SMAs[masses.index(j)]*SMA.unit*np.sqrt((np.sin(theta)*np.cos(nu))**2 + np.sin(nu)**2) # this is the distance between the star and the planet as we see it
+            d1 = d1.to(u.pc)
+            angSep = 206265*u.arcsec*d1.value/stars[starIndex[masses.index(j)]]['Distance'].value
+            separations += [angSep.value]
+        masses = np.array(masses) * mass.unit
+        SMAs = np.array(SMAs) * SMA.unit
+        separations = np.array(separations) * angSep.unit
+
+        #Making companion and stellar data table
+        planetData = [starNames, distances, SpTypes, separations, SMAs, masses, Imags, Hmags, Ages, starMasses]
+        planetLabels = ["Name", "Distance", "StarSpT", "AngSep", "SMA", "PlanetMass", "StarImag", "StarHmag", "Age", "StarMass"]
+        planets = QTable(planetData, names = planetLabels)   
+        return planets
+
 class ExoArchive_Universe(Universe):
     '''
     A child class of Universe that is adapted to create a universe from known NASA Exoplanet Archive Data

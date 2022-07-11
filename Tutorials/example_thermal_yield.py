@@ -11,7 +11,7 @@ psisim_path = os.path.dirname(psisim.__file__)
 
 tmt = telescope.TMT()
 psi_red = instrument.PSI_Red()
-psi_red.set_observing_mode(3600,2,'M',10, np.linspace(4.2,4.8,3)*u.micron) #3600s, 2 exposures,M-band, R of 10
+psi_red.set_observing_mode(3600*u.s,2,'M',10, np.linspace(4.2,4.8,3)*u.micron) #3600s, 2 exposures,M-band, R of 10
 
 ######################################
 ######## Generate the universe #######
@@ -70,7 +70,7 @@ print("\n Starting to generate planet spectra")
 for planet in planet_table[rand_planets]:
     #INSERT PLANET SELECTION RULES HERE
 
-    if planet['PlanetMass'] < 10:
+    if planet['PlanetMass'] < 10*u.Mearth:
         #If the planet is < 10 M_Earth, we don't trust bex. So we'll be pessimistic and just report its thermal equilibrium. 
         planet_type = "blackbody"
         planet_types.append(planet_type)
@@ -121,12 +121,12 @@ final_spectra[planet_eq_spectra > planet_spectra] = planet_eq_spectra[planet_eq_
 ##########################################
 
 post_processing_gain=10
-sim_F_lambda, sim_F_lambda_errs,sim_F_lambda_stellar, noise_components = observation.simulate_observation_set(tmt, psi_red,
+sim_F_lambda, sim_F_lambda_errs,sim_F_lambda_stellar, noise_components,_ = observation.simulate_observation_set(tmt, psi_red,
 	planet_table[rand_planets], final_spectra, model_wvs, intermediate_R, inject_noise=False,
 	post_processing_gain=post_processing_gain,return_noise_components=True)
 
 speckle_noises = np.array([s[0] for s in noise_components])
-photon_noises = np.array([s[3] for s in noise_components])
+photon_noises = np.array([s[2] for s in noise_components])
 
 flux_ratios = sim_F_lambda/sim_F_lambda_stellar
 detection_limits = sim_F_lambda_errs/sim_F_lambda_stellar
@@ -239,7 +239,7 @@ plt.show()
 ############################################################
 
 ### And now we'll make a simple histogram of detected vs. generated planet mass. 
-masses = [planet['PlanetMass'] for planet in planet_table]
+masses = [planet['PlanetMass'].value for planet in planet_table]
 detected_masses = [planet['PlanetMass'] for planet in planet_table[detected[:,1]]] #Picking 4.5 micron
 
 bins = np.logspace(np.log10(1),np.log10(1000),20)
@@ -271,6 +271,6 @@ ps_hdu = fits.PrimaryHDU(planet_spectra)
 ps_hdu.writeto("thermal_planet_spectra.fits",overwrite=True)
 flux_hdu = fits.PrimaryHDU([sim_F_lambda, sim_F_lambda_errs,np.array(sim_F_lambda_stellar)])
 flux_hdu.writeto("thermal_Observation_set.fits",overwrite=True)
-noise_components_hdu = fits.PrimaryHDU(noise_components)
+noise_components_hdu = fits.PrimaryHDU(noise_components.value)
 noise_components_hdu.writeto("thermal_noise_components.fits",overwrite=True)
 
