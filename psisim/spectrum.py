@@ -1,3 +1,4 @@
+from array import array
 import os
 import glob
 import psisim
@@ -587,7 +588,7 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
             wvs = [wvs]
 
         # Initialize Spectrum class
-        spec = Spectrum(sp_norm.wave, sp_norm.flux, R) # This R is not correct until downsample spectrum is applied
+        spec = Spectrum(sp_norm.wave*u.micron, np.array(sp_norm.flux)*sp_units, R) # This R is not correct until downsample spectrum is applied
 
         #Now get the spectrum!
         for wv in wvs: 
@@ -601,8 +602,8 @@ def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbos
 
             spec.R = wv/dwv
             #Down-sample the spectrum to the desired wavelength and interpolate
-            spec.downsample_spectrum(R,new_wvs=wvs) 
-
+            spec.downsample_spectrum(R,new_wvs=wvs)
+        spec.spectrum = spec.spectrum*sp_units
     elif model == 'Phoenix':
         
         path,star_filter,star_mag,filters,instrument_filter = user_params

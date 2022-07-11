@@ -85,9 +85,9 @@ class ExoSims_Universe(Universe):
             ras.append(coord.ra.value)
             decs.append(coord.dec.value)
             distances.append(coord.distance.value)
-        ras = np.array(ras)
-        decs = np.array(decs)
-        distances = np.array(distances)
+        ras = np.array(ras)*u.deg
+        decs = np.array(decs)*u.deg
+        distances = np.array(distances)*u.pc
         star_names =  np.array([su.TargetList.Name[i] for i in su.plan2star])
         spts = np.array([su.TargetList.Spec[i] for i in su.plan2star])
         su.TargetList.stellar_mass() # generate masses if haven't
@@ -104,7 +104,7 @@ class ExoSims_Universe(Universe):
         host_Kmags = np.array([su.TargetList.Kmag[i] for i in su.plan2star])
         
         # guess the radius and gravity from Vmag and Teff. This is of questionable reliability
-        host_MVs = host_Vmags - 5 * np.log10(distances/10) # absolute V mag
+        host_MVs = host_Vmags - 5 * np.log10(distances.value/10) # absolute V mag
         host_lums = 10**(-(host_MVs-4.83)/2.5) # L/Lsun
         host_radii = (5800/host_teff.value)**2 * np.sqrt(host_lums)  *u.solRad# Rsun
         host_gravs = constants.G * host_mass/(host_radii**2)

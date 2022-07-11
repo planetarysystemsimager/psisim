@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.colors as colors
+import astropy.units as u
 
 def make_plots():
     '''
@@ -59,9 +60,9 @@ def plot_detected_planet_contrasts(planet_table,wv_index,detected,flux_ratios,in
 
     #Plot 1 and 2 lambda/d
     ax.plot([instrument.current_wvs[wv_index]*1e-6/telescope.diameter*206265,instrument.current_wvs[wv_index]*1e-6/telescope.diameter*206265],
-        [0,1.],label=r"$\lambda/D$ at $\lambda=${:.3f}$\mu m$".format(instrument.current_wvs[wv_index]),color='k')
+        [0,1.],label=r"$\lambda/D$ at $\lambda=${:.3f}".format(instrument.current_wvs[wv_index]),color='k')
     ax.plot([2*instrument.current_wvs[wv_index]*1e-6/telescope.diameter*206265,2*instrument.current_wvs[wv_index]*1e-6/telescope.diameter*206265],
-        [0,1.],'-.',label=r"$2\lambda/D$ at $\lambda=${:.3f}$\mu m$".format(instrument.current_wvs[wv_index]),color='k')
+        [0,1.],'-.',label=r"$2\lambda/D$ at $\lambda=${:.3f}".format(instrument.current_wvs[wv_index]),color='k')
 
 
     #If detection_limits is passed, then plot the 5-sigma detection limits for each source
@@ -72,7 +73,7 @@ def plot_detected_planet_contrasts(planet_table,wv_index,detected,flux_ratios,in
             ax.plot([sep,sep],[flux_ratios[i,wv_index],alt_data[i,wv_index]],color='k',alpha=0.1,linewidth=1)
 
     #Axis title
-    ax.set_title("Planet Detection Yield at {:.3}um".format(instrument.current_wvs[wv_index]),fontsize=18)
+    ax.set_title("Planet Detection Yield at {:.3}".format(instrument.current_wvs[wv_index]),fontsize=18)
 
     #Legend
     legend = ax.legend(loc='upper right',fontsize=13)
