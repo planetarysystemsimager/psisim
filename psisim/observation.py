@@ -164,9 +164,6 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     #Apply a post-processing gain
     speckle_noise /= post_processing_gain
 
-    print(speckle_noise.unit)
-    print(read_noise.unit)
-    print(photon_noise.unit)
     ## Sum it all up
     total_noise = np.sqrt(speckle_noise**2+read_noise**2+photon_noise**2)
 
@@ -251,8 +248,8 @@ def get_noise_components(separation,star_aomag,instrument,wvs,star_spt,stellar_s
 
 
     # import pdb; pdb.set_trace()
-    photon_noise = np.sqrt(detector_spectrum.decompose().value + thermal_spectrum.decompose().value + speckle_noise.decompose().value) * u.electron
-
+    #photon_noise = np.sqrt(detector_spectrum.decompose().value + thermal_spectrum.decompose().value + speckle_noise.decompose().value) * u.electron
+    photon_noise = np.sqrt(detector_spectrum.decompose().value + thermal_spectrum.decompose().value) * u.electron
     # import pdb;pdb.set_trace()
 
     return speckle_noise,read_noise,photon_noise

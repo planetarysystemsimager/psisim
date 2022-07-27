@@ -207,9 +207,15 @@ class TMT(Telescope):
         
         '''
         # From Dimitri's Code
-        throughput = {"CFHT-Y":0.91,"TwoMASS-J":0.91,"TwoMASS-H":0.91,"TwoMASS-K":0.91}.get(band,0.91)
+        #throughput = {"CFHT-Y":0.91,"TwoMASS-J":0.91,"TwoMASS-H":0.91,"TwoMASS-K":0.91}.get(band,0.91)
+        dust_th = 0.98
+        oxydized_al_data = np.genfromtxt(datadir+'/throughput/protected_ag.csv', delimiter=',', skip_header=1)
+        tel_m1_th = np.interp(wvs.value, oxydized_al_data[:, 0], oxydized_al_data[:, 1]) * dust_th
+        tel_m2_th = tel_m1_th
+        tel_m3_th = tel_m1_th
+        throughput = tel_m1_th * tel_m2_th * tel_m3_th
         
-        return throughput*np.ones(np.shape(wvs))
+        return throughput
     
     def get_telescope_emissivity(self,wvs,band="TwoMass-J"):
         '''

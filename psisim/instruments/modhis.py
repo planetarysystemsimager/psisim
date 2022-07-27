@@ -7,9 +7,11 @@ import astropy.constants as constants
 import pysynphot as ps
 import warnings
 from astropy.modeling.models import BlackBody
+import matplotlib.pyplot as plt
 
 import psisim
 from psisim.instruments.hispec import hispec
+from psisim import datadir
 
 
 class modhis(hispec):
@@ -38,8 +40,10 @@ class modhis(hispec):
         self.dark_current = 0.02*u.electron/u.s #electrons/s/pix
         self.det_welldepth = 1e5 *u.photon
         self.det_linearity = 0.66*self.det_welldepth
-        self.qe = 0.95 * u.electron/u.ph
-        self.temperature = 243*u.K
+        self.qe = 0.9 * u.electron/u.ph
+        self.temperature_fei = 243*u.K
+        self.temperature_spec = 77*u.K
+        self.temperature_fiber = 276*u.K
 
         if telescope is None:
             self.telescope = psisim.telescope.TMT()
@@ -55,6 +59,7 @@ class modhis(hispec):
         self.fiber_contrast_gain = 10. #Contrast gain due to fiber ('off-axis' mode only)
         self.p_law_dh = -2.0 #The some power law constant Dimitri should explain. 
         self.ao_filter = 'bessell-I'
+        self.area_tel = 655 * u.m**2
         self.d_ao = 0.3 * u.m
         self.area_ao = np.pi*(self.d_ao/2)**2
         
@@ -166,23 +171,22 @@ class modhis(hispec):
 
         # TODO: Create a proper budget file for MODHIS and use that instead of constants
   
-        th_ao = {"CFHT-Y":0.8,"TwoMASS-J":0.8,"TwoMASS-H":0.8,"TwoMASS-K":0.8}.get(self.current_filter)  #From Dimitri code
-                  
+        #th_ao = {"CFHT-Y":0.8,"TwoMASS-J":0.8,"TwoMASS-H":0.8,"TwoMASS-K":0.8}.get(self.current_filter)  #From Dimitri code
+
+        '''          
         if self.mode == 'vfn':
             th_fiu = {"CFHT-Y":0.66*0.96,"TwoMASS-J":0.68*0.96,"TwoMASS-H":0.7*0.96,"TwoMASS-K":0.72*0.96}.get(self.current_filter) #From Dimitri Code(KPIC OAPS+FM+dichroic + PIAA)
             
             #TODO: Add in coro. Check about ADC and DM window.
             
             th_fiber = {"CFHT-Y":0.99*0.96,"TwoMASS-J":0.99*0.96,"TwoMASS-H":0.99*0.96,"TwoMASS-K":0.9*0.96}.get(self.current_filter) #From Dimitri code(prop loss, 98% per endface)
+        '''
+        th_fei = self.get_fei_throughput(wvs)
+        #th_fiu = {"CFHT-Y":0.66*0.96,"TwoMASS-J":0.68*0.96,"TwoMASS-H":0.7*0.96,"TwoMASS-K":0.72*0.96}.get(self.current_filter) #From Dimitri Code(KPIC OAPS+FM+dichroic + PIAA)
 
-        else:
-            th_fiu = {"CFHT-Y":0.66*0.96,"TwoMASS-J":0.68*0.96,"TwoMASS-H":0.7*0.96,"TwoMASS-K":0.72*0.96}.get(self.current_filter) #From Dimitri Code(KPIC OAPS+FM+dichroic + PIAA)
-            
-            #TODO: Check about ADC and DM window.
-                  
-            th_fiber = {"CFHT-Y":0.87*0.99*0.96,"TwoMASS-J":0.87*0.99*0.96,"TwoMASS-H":0.87*0.99*0.96,"TwoMASS-K":0.87*0.9*0.96}.get(self.current_filter) #From Dimitri code(87% insert. assuming PIAA, prop loss, 98% per endface)
-
-        th_feu = 1.0   #from Dimitri code
+        #TODO: Check about ADC and DM window.
+        th_fiber = self.get_fiber_throughput(wvs)
+        #th_fiber = {"CFHT-Y":0.87*0.99*0.96,"TwoMASS-J":0.87*0.99*0.96,"TwoMASS-H":0.87*0.99*0.96,"TwoMASS-K":0.87*0.9*0.96}.get(self.current_filter) #From Dimitri code(87% insert. assuming PIAA, prop loss, 98% per endface)
 
         if planet_flag:
             # Get separation-dependent planet throughput
@@ -196,8 +200,11 @@ class modhis(hispec):
         if self.mode == 'vfn':
             SR = np.ones(SR.shape)
 
+        static_coupling_diff_tmt = 0.655
+        piaa_boost = 1.3
+
         th_spec = self.get_spec_throughput(wvs)
-        th_inst = th_ao * th_fiu * th_feu * th_fiber * th_planet * th_spec * SR
+        th_inst = th_fei * th_fiber * th_planet * th_spec * SR * piaa_boost * static_coupling_diff_tmt
 
         return th_inst
 
@@ -205,9 +212,39 @@ class modhis(hispec):
         '''
         The instrument emissivity
         '''
+        # SR should not be included in emissivity, so will divide from throughput
+        SR = self.compute_SR(wvs)
+        if self.mode == 'vfn':
+            SR = np.ones(SR.shape)
+
+        static_coupling_diff_tmt = 0.655
+        piaa_boost = 1.3
         
         # TODO: do we want to use the throughput w/ or w/o the planet losses?
-        return (1-self.get_inst_throughput(wvs))
+        return (1-self.get_inst_throughput(wvs) / SR / piaa_boost / static_coupling_diff_tmt)
+
+    def get_fei_emissivity(self,wvs):
+        return (1-self.get_fei_throughput(wvs))
+
+    def get_fiber_emissivity(self, wvs):
+        return (1 - self.get_fiber_throughput(wvs))
+
+    def get_fei_throughput(self, wvs):
+
+        nfiraos_data = np.genfromtxt(datadir + '/throughput/nfiraos_th.csv', delimiter=',', skip_header=1)
+        th_ao = np.interp(wvs.value, nfiraos_data[:, 0], nfiraos_data[:, 1])
+
+        protected_au_data = np.genfromtxt(datadir + '/throughput/protected_au.csv', delimiter=',', skip_header=1)
+        FM1_th = np.interp(wvs.value, protected_au_data[:, 0], protected_au_data[:, 1])
+        FOAP1_th = FM1_th
+        ADC_th = 0.99 ** 4
+        TRACDICH_th = 0.94
+        redbluedich_th = 0.94
+        PIAA_th = 0.99 ** 4
+        injectionlens_th = 0.955
+        th_fiu = FM1_th * FOAP1_th * ADC_th * TRACDICH_th * redbluedich_th * PIAA_th * injectionlens_th
+
+        return th_fiu * th_ao
 
     def get_spec_throughput(self, wvs):
         '''
@@ -215,22 +252,67 @@ class modhis(hispec):
         self.get_inst_throughput includes everything, whereas this is just the spectrograph. 
         '''
 
-        th_spec = {"CFHT-Y":0.5,"TwoMASS-J":0.5,"TwoMASS-H":0.5,"TwoMASS-K":0.5}.get(self.current_filter,0.5) #From Dimitri code
+        protected_au_data = np.genfromtxt(datadir+'/throughput/protected_au.csv', delimiter=',', skip_header=1)
+        echelle_data = np.genfromtxt(datadir+'/throughput/echelle.csv', delimiter=',', skip_header=1)
+        cx_data = np.genfromtxt(datadir+'/throughput/cx.csv', delimiter=',', skip_header=1)
 
-        return th_spec*np.ones(np.shape(wvs))
+        TMA1_th = (np.interp(wvs.value, protected_au_data[:, 0], protected_au_data[:, 1])) ** 3
+        cold_stop = 0.94
+        echelle_th = 0.7 * np.interp(wvs.value, echelle_data[:, 0], echelle_data[:, 1])  # 80% max efficiency
+        cx_th = np.interp(wvs.value, cx_data[:, 0], cx_data[:, 1])
+        FM1_th = np.interp(wvs.value, protected_au_data[:, 0], protected_au_data[:, 1])
+        TMA2_th = TMA1_th
+        th_spec = TMA1_th * cold_stop * echelle_th * cx_th * FM1_th * TMA2_th #* self.qe
+
+        #th_spec = {"CFHT-Y":0.5,"TwoMASS-J":0.5,"TwoMASS-H":0.5,"TwoMASS-K":0.5}.get(self.current_filter,0.5) #From Dimitri code
+
+        return th_spec
+
+    def get_spec_emissivity(self, wvs):
+        return (1 - self.get_spec_throughput(wvs))
+
+    def get_fiber_throughput(self, wvs):
+        hispec_fiber_data = np.genfromtxt(datadir + '/throughput/hispec_yjhkfiber.csv', delimiter=',', skip_header=1)
+        fiberin_th = 0.99
+        fiberprop_th = np.interp(wvs.value, hispec_fiber_data[:, 0], hispec_fiber_data[:, 1])
+        fiber_break = 0.98 ** 3
+        fiberout_th = 0.99
+        th_fiber = fiberin_th * fiberprop_th * fiber_break * fiberout_th
+        return th_fiber
 
     def get_instrument_background(self,wvs,solidangle):
         '''
         Returns the instrument background at each wavelength in units of photons/s/Angstrom/arcsecond**2
         '''
-        bb_lam = BlackBody(self.temperature,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
-        inst_therm = bb_lam(wvs)
-        inst_therm *= solidangle
-        inst_therm = inst_therm.to(u.ph/(u.micron * u.s * u.cm**2),equivalencies=u.spectral_density(wvs)) * self.area_ao.to(u.cm**2)
-        inst_therm *= self.get_inst_emissivity(wvs)
-        inst_therm *= self.get_spec_throughput(wvs)
+        bb_lam_fei = BlackBody(self.temperature_fei,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
+        fei_therm = bb_lam_fei(wvs)
+        fei_therm *= solidangle
+        fei_therm = fei_therm.to(u.ph/(u.micron * u.s * u.cm**2),equivalencies=u.spectral_density(wvs)) * self.area_tel.to(u.cm**2)
+        fei_therm *= self.get_fei_emissivity(wvs)
+        fei_therm *= self.get_fiber_throughput(wvs)
+        fei_therm *= self.get_spec_throughput(wvs)
 
-        return inst_therm
+
+
+        bb_lam_fiber = BlackBody(self.temperature_fiber, scale=1.0 * u.erg / (u.cm ** 2 * u.AA * u.s * u.sr))
+        fiber_therm = bb_lam_fiber(wvs)
+        fiber_therm *= solidangle
+        fiber_therm = fiber_therm.to(u.ph / (u.micron * u.s * u.cm ** 2),
+                                   equivalencies=u.spectral_density(wvs)) * self.area_tel.to(u.cm ** 2)
+        fiber_therm *= self.get_fiber_emissivity(wvs)
+        fiber_therm *= self.get_spec_throughput(wvs)
+
+
+
+        bb_lam_spec = BlackBody(self.temperature_spec,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
+        spec_therm = bb_lam_spec(wvs)
+        spec_therm *= solidangle
+        spec_therm = spec_therm.to(u.ph / (u.micron * u.s * u.cm ** 2),
+                                   equivalencies=u.spectral_density(wvs)) * self.area_tel.to(u.cm ** 2)
+        spec_therm *= self.get_spec_emissivity(wvs)
+        #spec_therm *= self.qe
+
+        return fei_therm + fiber_therm + spec_therm
 
     def load_scale_aowfe(self,seeing,airmass,site_median_seeing=0.6):
         '''
@@ -273,7 +355,7 @@ class modhis(hispec):
                                             site_median_seeing=self.telescope.median_seeing)
 
         # Take minimum wavefront error between natural guide star and laser guide star
-        ao_wfe = np.min([np.interp(self.ao_mag,ao_rmag, ao_wfe_ngs).value,np.interp(self.ao_mag,ao_rmag, ao_wfe_lgs).value]) * u.nm
+        ao_wfe = np.min([np.interp(self.ao_mag,ao_rmag, ao_wfe_ngs.value),np.interp(self.ao_mag,ao_rmag, ao_wfe_lgs.value)]) * u.nm
 
         #Compute the strehl ratio
         SR = np.array(np.exp(-(2*np.pi*ao_wfe.to(u.micron)/wave)**2))
@@ -298,8 +380,8 @@ class modhis(hispec):
         #TODO: add ADC residuals effect
         #TODO: @Max, why feed "filter", "star_spt" if not used. Why feed "telescope" if already available from self.telescope?
 
-        if self.mode != 'vfn':
-            print("Warning: only 'vfn' mode has been confirmed")
+        #if self.mode != 'vfn':
+        #    print("Warning: only 'vfn' mode has been confirmed")
         
         if self.mode == "on-axis":
             return np.ones([np.size(separations),np.size(wvs)])
