@@ -2,7 +2,7 @@ import numpy as np
 import scipy.interpolate as si
 import astropy.units as u
 import astropy.constants as constants
-from astropy.modeling.blackbody import blackbody_lambda, blackbody_nu
+from astropy.modeling.models import BlackBody
 from psisim import datadir
 from psisim import spectrum
 import psisim.nair as nair
@@ -237,11 +237,8 @@ class TMT(Telescope):
         diffraction_limit = (wvs/self.diameter.to(u.micron)*u.radian).to(u.arcsec)
         solidangle = diffraction_limit**2 * 1.13
 
-        # TODO: blackbody_lambda is deprecated, change to BlackBody
-        #bb_lam = BlackBody(self.temperature,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
-        #inst_therm = bb_lam(wvs)
-
-        thermal_emission = blackbody_lambda(wvs,self.temperature)
+        bb_lam = BlackBody(self.temperature,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
+        thermal_emission = bb_lam(wvs)
         thermal_emission *= solidangle
         thermal_emission = thermal_emission.to(u.ph/(u.s * u.cm**2 * u.AA),equivalencies=u.spectral_density(wvs))
 
@@ -373,11 +370,8 @@ class Keck(Telescope):
         diffraction_limit = (wvs/self.diameter.to(u.micron)*u.radian).to(u.arcsec)
         solidangle = diffraction_limit**2 * 1.13
 
-        # TODO: blackbody_lambda is deprecated, change to BlackBody
-        #bb_lam = BlackBody(self.temperature,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
-        #inst_therm = bb_lam(wvs)
-
-        thermal_emission = blackbody_lambda(wvs,self.temperature)
+        bb_lam = BlackBody(self.temperature,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
+        thermal_emission = bb_lam(wvs)
         thermal_emission *= solidangle
         thermal_emission = thermal_emission.to(u.ph/(u.s * u.cm**2 * u.AA),equivalencies=u.spectral_density(wvs))
 
