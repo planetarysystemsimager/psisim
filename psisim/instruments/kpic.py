@@ -203,7 +203,8 @@ class kpic_phaseII(Instrument):
             th_fiber = th_fiber * 0.98 *  np.interp(wvs, th_wvs, th_data[37]) # Add in const. prop. loss (0.98) and second endface
             th_fiber *= self.get_dar_coupling_throughput(self, wvs)
 
-        th_feu = 0.89   #from Dimitri code
+        th_feu = 0.73 #measured for phase 1
+        # th_feu = 0.89   #from Dimitri code
 
         if planet_flag:
             # Get separation-dependent planet throughput
@@ -251,9 +252,9 @@ class kpic_phaseII(Instrument):
         '''
         # K-band value for NIRSPEC from Dimitri Code
         if self.current_filter == "TwoMASS-K":
-            th_spec = 0.3*si.interp1d(self.nirspec_th_data[:,0], self.nirspec_th_data[:,1],bounds_error=False,fill_value=0)(wvs)
+            th_spec = 0.2*si.interp1d(self.nirspec_th_data[:,0], self.nirspec_th_data[:,1],bounds_error=False,fill_value=0)(wvs)
         else:
-            th_spec = {"CFHT-Y":0.5,"TwoMASS-J":0.5,"TwoMASS-H":0.5,"TwoMASS-K":0.3}.get(self.current_filter,0.5)
+            th_spec = {"CFHT-Y":0.5,"TwoMASS-J":0.5,"TwoMASS-H":0.5,"TwoMASS-K":0.2}.get(self.current_filter,0.5)
             th_spec = th_spec*np.ones(np.shape(wvs))
 
         return th_spec
