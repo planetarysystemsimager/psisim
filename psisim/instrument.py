@@ -16,4 +16,5 @@ from psisim.instruments.psi import PSI_Blue, PSI_Red
 from psisim.instruments.hispec import hispec
 from psisim.instruments.modhis import modhis
 from psisim.instruments.kpic import kpic_phaseII
+from psisim.instruments.kpic import kpic_phaseI
 

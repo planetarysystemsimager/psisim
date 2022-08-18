@@ -44,16 +44,18 @@ class hispec(Instrument):
         self.dark_current = 0.02*u.electron/u.s #electrons/s/pix
         self.det_welldepth = 1e5 *u.photon
         self.det_linearity = 0.66*self.det_welldepth
-        self.qe = 0.95 * u.electron/u.ph
-        self.temperature = 276*u.K
+        self.qe = 0.9 * u.electron/u.ph
+        self.temperature_fei = 278*u.K
+        self.temperature_spec = 77*u.K
+        self.temperature_fiber = 278*u.K
 
         if telescope is None:
             self.telescope = psisim.telescope.Keck()
         else:
             self.telescope = telescope
 
-        self.th_data = np.genfromtxt(datadir+'/throughput/hispec_throughput_budget.csv',
-                                    skip_header=1,usecols=np.arange(5,1566),delimiter=',',missing_values='')
+        # self.th_data = np.genfromtxt(datadir+'/throughput/hispec_throughput_budget.csv',
+        #                             skip_header=1,usecols=np.arange(5,1566),delimiter=',',missing_values='')
 
         # load in fiber coupling efficiency as a function of misalignment
         fiber_data_filename = os.path.join(datadir, "smf", "keck_pupil_charge0.csv")
@@ -169,16 +171,48 @@ class hispec(Instrument):
         if self.current_filter not in self.filters:
             raise ValueError("Your current filter of {} is not in the available filters: {}".format(self.current_filter,self.filters))
 
-        # By wavelength from throughput budget file
-        th_data = self.th_data
-        th_wvs = th_data[0] * u.micron
-        
-        th_ao = np.interp(wvs, th_wvs, np.prod(th_data[2:13], axis=0)) # AO throughput 
-        th_fiu = np.interp(wvs, th_wvs, np.prod(th_data[14:29], axis=0)) # KPIC throughput
-        #th_fcd = np.interp(wvs, th_wvs, th_data[30]) # Fiber Dynamic Coupling (need function to scale with Strehl/NGS, currently unused)
-        th_fiber = np.interp(wvs, th_wvs, np.prod(th_data[31:38], axis=0)) # Fiber throughput (excluding fcd above)
-        #th_fiber *= self.get_dar_coupling_throughput(wvs) #MMB Commenting this out until astropy units are included. 
-        th_spec = np.interp(wvs, th_wvs, np.prod(th_data[39:51], axis=0)) # HISPEC - SPEC throughput
+        wave = wvs.to(u.um).value
+
+        oxydized_al_data = np.genfromtxt(datadir + '/throughput/oxydized_al.csv', delimiter=',', skip_header=1)
+        FSS99_ag_data = np.genfromtxt(datadir + '/throughput/FSS99_ag.csv', delimiter=',', skip_header=1)
+        opticoat_ag_data = np.genfromtxt(datadir + '/throughput/opticoat_ag.csv', delimiter=',', skip_header=1)
+        kao_shwfsdichroic_data = np.genfromtxt(datadir + '/throughput/kao_shwfsdichroic.csv', delimiter=',', skip_header=1)
+
+        dust_th = 0.97
+        K1_th = np.interp(wave,oxydized_al_data[:,0],oxydized_al_data[:,1]) * dust_th
+        K2_th = np.interp(wave,FSS99_ag_data[:,0],FSS99_ag_data[:,1]) * dust_th
+        K3_th = K1_th
+        TTM_th = np.interp(wave,opticoat_ag_data[:,0],opticoat_ag_data[:,1]) * dust_th
+        OAP1_th = TTM_th
+        DM_th = K2_th
+        OAP2_th = TTM_th
+        SHWFSDICH_th = np.interp(wave,kao_shwfsdichroic_data[:,0],kao_shwfsdichroic_data[:,1]) * dust_th
+        PICKOFF_th = TTM_th
+        KAO_th = K1_th * K2_th * K3_th * TTM_th * OAP1_th * DM_th * OAP2_th * SHWFSDICH_th * PICKOFF_th
+        KAO_em = 1-KAO_th
+
+        protected_au_data = np.genfromtxt(datadir + '/throughput/protected_au.csv', delimiter=',', skip_header=1)
+
+        PWFSDICH_th = 0.94
+        FM1_th = np.interp(wave,protected_au_data[:,0],protected_au_data[:,1])
+        FOAP1_th = FM1_th
+        ADC_th = 0.9
+        TRACDICH_th = 0.94
+        redbluedich_th = 0.94
+        PIAA_th = 0.99**4
+        injectionlens_th = 0.955
+        HISPECFEI_th = PWFSDICH_th * FM1_th * FOAP1_th * ADC_th * TRACDICH_th * redbluedich_th * PIAA_th*injectionlens_th
+        HISPECFEI_em = 1.0 - HISPECFEI_th
+
+        hispec_fiber_data = np.genfromtxt(datadir + '/throughput/hispec_yjhkfiber.csv', delimiter=',', skip_header=1)
+
+        fiberin_th = 0.99
+        fiberprop_th = np.interp(wave, hispec_fiber_data[:,0],hispec_fiber_data[:,1])
+        fiber_break = 0.98**3
+        fiberout_th = 0.99
+        fiber_th = fiberin_th * fiberprop_th * fiber_break * fiberout_th
+
+        hispec_th = self.get_spec_throughput(wvs)
 
         if planet_flag:
             # Get separation-dependent planet throughput
@@ -187,19 +221,22 @@ class hispec(Instrument):
             # Set to 1 to ignore separation effects
             th_planet = 1
 
-        SR = self.compute_SR(wvs)
+        strehl = self.compute_SR(wvs)
+        diff_keck = 0.6 * 1.4
+        coupling = strehl * diff_keck
 
-        th_inst = th_ao * th_fiu * th_fiber * th_planet * th_spec * SR
+        th_inst = KAO_th * HISPECFEI_th * fiber_th * hispec_th * coupling * th_planet
+        # th_inst = th_ao * th_fiu * th_fiber * th_planet * th_spec * SR
 
         return th_inst
     
-    def get_inst_emissivity(self,wvs):
-        '''
-        The instrument emissivity
-        '''
-
-        # TODO: do we want to use the throughput w/ or w/o the planet losses?
-        return (1-self.get_inst_throughput(wvs))
+    # def get_inst_emissivity(self,wvs):
+    #     '''
+    #     The instrument emissivity
+    #     '''
+    #
+    #     # TODO: do we want to use the throughput w/ or w/o the planet losses?
+    #     return (1-self.get_inst_throughput(wvs))
 
     def get_spec_throughput(self, wvs):
         '''
@@ -207,28 +244,93 @@ class hispec(Instrument):
         self.get_inst_throughput includes everything, whereas this is just the spectrograph. 
         '''
 
-        # By wavelength from throughput budget file
-        th_data = self.th_data
-        th_wvs = th_data[0] * u.micron
-        th_spec = np.interp(wvs, th_wvs, np.prod(th_data[39:51], axis=0))
+        wave = wvs.to(u.um).value
 
-        return th_spec
+        protected_au_data = np.genfromtxt(datadir + '/throughput/protected_au.csv', delimiter=',', skip_header=1)
+        echelle_data = np.genfromtxt(datadir + '/throughput/echelle.csv', delimiter=',', skip_header=1)
+        cx_data = np.genfromtxt(datadir + '/throughput/cx.csv', delimiter=',', skip_header=1)
+
+        TMA1_th = (np.interp(wave, protected_au_data[:,0],protected_au_data[:,1]))**3
+        cold_stop = 0.94
+        echelle_th = 0.75 * np.interp(wave,echelle_data[:,0],echelle_data[:,1])#80% max efficiency
+        cx_th = np.interp(wave,cx_data[:,0],cx_data[:,1])
+        FM1_th = np.interp(wave, protected_au_data[:,0],protected_au_data[:,1])
+        TMA2_th = TMA1_th
+        hispec_th = TMA1_th* cold_stop * echelle_th * cx_th *FM1_th * TMA2_th
+
+        return hispec_th
 
     def get_instrument_background(self,wvs,solidangle):
         '''
         Returns the instrument background at each wavelength in units of photons/s/Angstrom/arcsecond**2
         '''
-        bb_lam = BlackBody(self.temperature,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
-        inst_therm = bb_lam(wvs)
-        inst_therm *= solidangle
-        inst_therm = inst_therm.to(u.ph/(u.micron * u.s * u.cm**2),equivalencies=u.spectral_density(wvs)) * self.area_ao.to(u.cm**2)
-        inst_therm *= self.get_inst_emissivity(wvs)
 
-        # inst_therm = inst_therm.to(u.ph/u.s/u.arcsec**2/u.Angstrom)
+        wave = wvs.to(u.um).value
 
-        inst_therm *= self.get_spec_throughput(wvs)
+        oxydized_al_data = np.genfromtxt(datadir + '/throughput/oxydized_al.csv', delimiter=',', skip_header=1)
+        FSS99_ag_data = np.genfromtxt(datadir + '/throughput/FSS99_ag.csv', delimiter=',', skip_header=1)
+        opticoat_ag_data = np.genfromtxt(datadir + '/throughput/opticoat_ag.csv', delimiter=',', skip_header=1)
+        kao_shwfsdichroic_data = np.genfromtxt(datadir + '/throughput/kao_shwfsdichroic.csv', delimiter=',', skip_header=1)
 
-        return inst_therm
+        dust_th = 0.97
+        K1_th = np.interp(wave,oxydized_al_data[:,0],oxydized_al_data[:,1]) * dust_th
+        K2_th = np.interp(wave,FSS99_ag_data[:,0],FSS99_ag_data[:,1]) * dust_th
+        K3_th = K1_th
+        TTM_th = np.interp(wave,opticoat_ag_data[:,0],opticoat_ag_data[:,1]) * dust_th
+        OAP1_th = TTM_th
+        DM_th = K2_th
+        OAP2_th = TTM_th
+        SHWFSDICH_th = np.interp(wave,kao_shwfsdichroic_data[:,0],kao_shwfsdichroic_data[:,1]) * dust_th
+        PICKOFF_th = TTM_th
+        KAO_th = K1_th * K2_th * K3_th * TTM_th * OAP1_th * DM_th * OAP2_th * SHWFSDICH_th * PICKOFF_th
+        KAO_em = 1-KAO_th
+
+        protected_au_data = np.genfromtxt(datadir + '/throughput/protected_au.csv', delimiter=',', skip_header=1)
+
+        PWFSDICH_th = 0.94
+        FM1_th = np.interp(wave,protected_au_data[:,0],protected_au_data[:,1])
+        FOAP1_th = FM1_th
+        ADC_th = 0.9
+        TRACDICH_th = 0.94
+        redbluedich_th = 0.94
+        PIAA_th = 0.99**4
+        injectionlens_th = 0.955
+        HISPECFEI_th = PWFSDICH_th * FM1_th * FOAP1_th * ADC_th * TRACDICH_th * redbluedich_th * PIAA_th*injectionlens_th
+
+        hispec_fiber_data = np.genfromtxt(datadir + '/throughput/hispec_yjhkfiber.csv', delimiter=',', skip_header=1)
+
+        fiberin_th = 0.99
+        fiberprop_th = np.interp(wave, hispec_fiber_data[:,0],hispec_fiber_data[:,1])
+        fiber_break = 0.98**3
+        fiberout_th = 0.99
+        fiber_th = fiberin_th * fiberprop_th * fiber_break * fiberout_th
+
+        hispec_th = self.get_spec_throughput(wvs)
+
+        bb_lam_fei = BlackBody(self.temperature_fei,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
+        fei_therm = bb_lam_fei(wvs)
+        fei_therm *= solidangle
+        fei_therm = fei_therm.to(u.ph/(u.micron * u.s * u.cm**2),equivalencies=u.spectral_density(wvs)) * self.telescope.collecting_area
+        fei_therm *= 1-KAO_em*HISPECFEI_th
+        fei_therm *= fiber_th
+        fei_therm *= hispec_th
+
+        bb_lam_fiber = BlackBody(self.temperature_fiber, scale=1.0 * u.erg / (u.cm ** 2 * u.AA * u.s * u.sr))
+        fiber_therm = bb_lam_fiber(wvs)
+        fiber_therm *= solidangle
+        fiber_therm = fiber_therm.to(u.ph / (u.micron * u.s * u.cm ** 2),
+                                     equivalencies=u.spectral_density(wvs)) * self.telescope.collecting_area
+        fiber_therm *= 1-fiber_th
+        fiber_therm *= hispec_th
+
+        bb_lam_spec = BlackBody(self.temperature_spec,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
+        spec_therm = bb_lam_spec(wvs)
+        spec_therm *= solidangle
+        spec_therm = spec_therm.to(u.ph / (u.micron * u.s * u.cm ** 2),
+                                   equivalencies=u.spectral_density(wvs)) * self.telescope.collecting_area
+        spec_therm *= 1-hispec_th
+
+        return fei_therm + fiber_therm + spec_therm
 
     def load_scale_aowfe(self,seeing,airmass,site_median_seeing=0.6):
         '''
