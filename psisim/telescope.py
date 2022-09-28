@@ -125,7 +125,7 @@ class TMT(Telescope):
     An implementation of the Telescope class
     '''
     def __init__(self,airmass = 1.0,water_vapor=  1.0,path=None):
-        super(TMT, self).__init__(30)
+        super(TMT, self).__init__(30) #todo: correction needed due to central obscuration
 
         self.temperature = 276 * u.K
         self.median_seeing = 0.6 * u.arcsec
@@ -207,9 +207,15 @@ class TMT(Telescope):
         
         '''
         # From Dimitri's Code
-        throughput = {"CFHT-Y":0.91,"TwoMASS-J":0.91,"TwoMASS-H":0.91,"TwoMASS-K":0.91}.get(band,0.91)
+        #throughput = {"CFHT-Y":0.91,"TwoMASS-J":0.91,"TwoMASS-H":0.91,"TwoMASS-K":0.91}.get(band,0.91)
+        dust_th = 0.98
+        oxydized_al_data = np.genfromtxt(datadir+'/throughput/protected_ag.csv', delimiter=',', skip_header=1)
+        tel_m1_th = np.interp(wvs.value, oxydized_al_data[:, 0], oxydized_al_data[:, 1]) * dust_th
+        tel_m2_th = tel_m1_th
+        tel_m3_th = tel_m1_th
+        throughput = tel_m1_th * tel_m2_th * tel_m3_th
         
-        return throughput*np.ones(np.shape(wvs))
+        return throughput
     
     def get_telescope_emissivity(self,wvs,band="TwoMass-J"):
         '''
@@ -261,9 +267,6 @@ class Keck(Telescope):
         if path is None:
             path = datadir
         self.path = path #A path to background, transmission and AO files
-
-        # Throughput data
-        self.th_data = np.genfromtxt(datadir+'/throughput/keck_throughput_budget.csv',skip_header=1,usecols=np.arange(5,1566),delimiter=',',missing_values='')
 
 
     def get_sky_background(self, wvs, R=1e5):
@@ -333,16 +336,17 @@ class Keck(Telescope):
         Band no longer needed.
 
         Args:
-            band (str): A photometric band. 
-        
+            band (str): A photometric band.
         '''
+        wave = wvs.to(u.um).value
+        oxydized_al_data = np.genfromtxt(datadir+'/throughput/oxydized_al.csv', delimiter=',', skip_header=1)
+        tel_m1_th = np.interp(wave,oxydized_al_data[:,0],oxydized_al_data[:,1])
+        tel_m2_th = tel_m1_th
+        tel_m3_th = tel_m1_th
+        tel_th = tel_m1_th * tel_m2_th * tel_m3_th
+        tel_em = (1-tel_th)
 
-        # By wavelength from throughput budget file
-        th_data = self.th_data
-        th_wvs = th_data[0] * u.micron
-        throughput = np.interp(wvs, th_wvs, np.prod(th_data[4:7], axis=0)) # telescope throughput rows
-
-        return throughput
+        return tel_th
     
     def get_telescope_emissivity(self,wvs,band="TwoMass-J"):
         '''
@@ -351,8 +355,7 @@ class Keck(Telescope):
         Currently only Y,J,H and K are supported, otherwise 1-0.88 is returned. 
 
         Args:
-            band (str): A photometric band. 
-        
+            band (str): A photometric band.
         '''
         
         emissivity = 1-self.get_telescope_throughput(wvs,band=band)
