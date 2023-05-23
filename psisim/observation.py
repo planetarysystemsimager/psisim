@@ -1,3 +1,4 @@
+from ast import Mult
 from psisim import spectrum
 import numpy as np
 import scipy.interpolate as si
@@ -10,7 +11,7 @@ import warnings
 
 def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum,wvs,spectrum_R,
     inject_noise=True,verbose=False,post_processing_gain = 1,return_noise_components=False,stellar_spec=None,
-    apply_lsf=False,integrate_delta_wv=False,no_speckle_noise=False,plot=False, sky_on=True):
+    apply_lsf=False,integrate_delta_wv=False,no_speckle_noise=False,plot=False,sky_on=False, single_obj = False):
     '''
     A function that simulates an observation
 
@@ -43,11 +44,11 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
         #Get the stellar spectrum at the wavelengths of interest. 
         #The stellar spectrum will be in units of photons/s/cm^2/angstrom
         stellar_spectrum = spectrum.get_stellar_spectrum(planet_table_entry,wvs,instrument.current_R,
-            verbose=verbose)
+            verbose=verbose).spectrum
     else: 
         stellar_spectrum = copy.deepcopy(stellar_spec)
     #TODO: Add check that the input stellar spectrum as the correct units
-    
+
     #Multiply the stellar spectrum by the collecting area and a factor of 10,000
     #to convert from m^2 to cm^2 and get the stellar spectrum in units of photons/s
     stellar_spectrum *= telescope.collecting_area.to(u.cm**2)
@@ -164,9 +165,6 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     #Apply a post-processing gain
     speckle_noise /= post_processing_gain
 
-    print(speckle_noise.unit)
-    print(read_noise.unit)
-    print(photon_noise.unit)
     ## Sum it all up
     total_noise = np.sqrt(speckle_noise**2+read_noise**2+photon_noise**2)
 
@@ -180,9 +178,12 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
             ## TODO: Make this poisson so that it's valid still in low photon count regime. 
             if detector_spectrum[i] != detector_spectrum[i]:
                 detector_spectrum[i] = np.nan
+            if stellar_spectrum[i] != stellar_spectrum[i]:
+                stellar_spectrum[i] = np.nan
             else:
                 # import pdb; pdb.set_trace()
                 detector_spectrum[i] = np.random.normal(detector_spectrum[i].value,noise.value)*noise.unit
+                detector_stellar_spectrum[i] = np.random.normal(detector_stellar_spectrum[i].value,noise.value)*noise.unit
 
     #TODO: Currently everything is in e-. We likely want it in a different unit at the end. 
     
@@ -309,5 +310,319 @@ def simulate_observation_set(telescope, instrument, planet_table,planet_spectra,
         return F_lambdas,F_lambda_errors,F_lambdas_stellar
 
 
+#ETC
+def etc(F_star, telescope, instrument, t_int, wvs, contrast = None, t_int_planet = 0):
+    '''
+    Calculate approximate number of electrons a stellar spectrum will produce per second on detector for a single exposure
+    
+    Parameters
+    ----------
+    F_star : PSISIM spectrum object
+        stellar spectrum, expected units are ph/(A*s*cm2)
+    telescope : 
+        PSISIM telescope object
+    instrument :
+        PSISIM intrument object
+    t_int : units of time
+        Integration time
+    wvs : array-like
+        wavelength array to observe in
+    contrast : float
+        if not None, will return e-/s of planet flux, expected value is a power of 10
+    t_int_planet : units of time
+        Integration time for reflected light signal
+
+    Returns
+    -------    
+    detector_signal : float
+        signal produced on detector in e-
+    reflected_detector_signal : float, optional
+        planet's reflected light signal on detector, e-
+    '''
+    # Spectrum * collecting area * transmission
+    detector_signal_dt = np.mean(F_star.spectrum) * telescope.collecting_area.to(u.cm**2) * np.mean(instrument.get_filter_transmission(wvs, band = instrument.current_filter))
+    # *throughput * quantum efficieny * wvs
+    detector_signal_dt *= np.nanmean(instrument.get_inst_throughput(wvs, planet_flag = False)) * instrument.qe * np.mean(1e4*u.AA/u.micron*instrument.current_dwvs)
+    #units now in e-/s
+    detector_signal = detector_signal_dt * t_int.to(u.s)
+
+    #Steal PSISIM code to calulate noise levels
+    read_noise = instrument.read_noise*instrument.spatial_sampling
+    #calculate thermal spectrum 
+    thermal_sky = telescope.get_sky_background(wvs,instrument.current_R) * telescope.collecting_area.to(u.cm**2)
+    thermal_sky *= telescope.get_telescope_throughput(wvs,band=instrument.current_filter) * instrument.get_inst_throughput(wvs)
+    thermal_telescope = telescope.get_thermal_emission(wvs,band=instrument.current_filter) * telescope.collecting_area.to(u.cm**2) * instrument.get_inst_throughput(wvs)
+    diffraction_limit = (wvs/telescope.diameter.to(u.micron)*u.radian).to(u.arcsec)
+    solidangle = diffraction_limit**2 * 1.13
+    thermal_inst = instrument.get_instrument_background(wvs,solidangle)
+    thermal_flux = np.nanmean(thermal_sky + thermal_telescope + thermal_inst) * instrument.qe 
+    thermal_flux *= np.mean(1e4*u.AA/u.micron*instrument.current_dwvs) * t_int.to(u.s)
+
+    speckle_noise = 0 * u.electron #assume no speckle noise for now    
+    photon_noise = np.sqrt(detector_signal + thermal_flux + speckle_noise)
+    total_noise = np.sqrt(speckle_noise.value**2+read_noise.value**2+photon_noise.value**2) * u.electron
+
+    if contrast is not None:
+        reflected_detector_signal = detector_signal_dt * (10**contrast) * t_int_planet.to(u.s)
+        reflected_photon_noise = np.sqrt(reflected_detector_signal + thermal_flux + speckle_noise)
+        reflected_total_noise = np.sqrt(speckle_noise.value**2+read_noise.value**2+reflected_photon_noise.value**2) * u.electron
+        return detector_signal, total_noise, reflected_detector_signal, reflected_total_noise
+    else:
+        return detector_signal, total_noise
 
 
+# Polarization Functionality
+
+#in the future, polarimeters for each instrument need to be added & implemented
+
+def generate_muellers(stokes_param=None,hwp_angles=None,n_cycles=None):
+    '''
+    Generate measurement matrices for a given Stokes Parameter and optionally defined hwp angles
+    Simple polarizer of rotating half-wave plate and wollaston prism assumed
+
+    Parameters
+    ----------
+    Stokes_param : str
+        Q or U
+    hwp_angles : array-like
+        list of half wave plate angles (rad) desired, pretend the hwp will be rotating to give different spectra
+    n_cycles : int
+        number of times to repeat the hwp_cycles given
+
+    Returns
+    -------
+    Muellers : np.ndarray dim(2*n_cycles*len(hwp_angles),4,4)
+        list of generated measurement matrices
+    '''
+
+    # Matrix for wollaston prism assuming equal transmittance and reflectance
+    kx, ky = 1,1
+    #for now ordinary beam corresponds to Y polarization, extraordinary corresponds to X pol
+    Mo_woll = np.array([(ky/2,ky/2,0,0),(ky/2,ky/2,0,0),(0,0,0,0),(0,0,0,0)]) #ordinary beam
+    Me_woll = np.array([(kx/2,-kx/2,0,0),(-kx/2,kx/2,0,0),(0,0,0,0),(0,0,0,0)]) #extraordinary beam
+
+    Muellers = []
+    M_rot = lambda x: np.array([(1,0,0,0),(0,np.cos(2*x),np.sin(2*x),0),(0,-np.sin(2*x),np.cos(2*x),0),(0,0,0,-1)])
+    if hwp_angles is not None:
+        for angle in hwp_angles:
+            Mo_full = M_rot(-angle).dot(Mo_woll).dot(M_rot(angle))
+            Me_full = M_rot(-angle).dot(Me_woll).dot(M_rot(angle))
+            Muellers.append([Mo_full,Me_full])
+    elif stokes_param == "Q":
+        angle = np.pi/2
+        Mo_full = M_rot(-angle).dot(Mo_woll).dot(M_rot(angle))
+        Me_full = M_rot(-angle).dot(Me_woll).dot(M_rot(angle))
+        Muellers.append([Mo_full,Me_full])
+    elif stokes_param == "U":
+        angle = np.pi/4
+        Mo_full = M_rot(-angle).dot(Mo_woll).dot(M_rot(angle))
+        Me_full = M_rot(-angle).dot(Me_woll).dot(M_rot(angle))
+        Muellers.append([Mo_full,Me_full])
+    
+    if n_cycles is not None:
+        Muellers = np.vstack(Muellers * n_cycles)
+
+    return np.array(Muellers) 
+
+def simulate_stokes_observation(telescope, instrument, Stokes_model, wavelengths, stokes_param = "Q", Muellers = None,
+                                inject_noise = False, sky_on = False, post_processing_gain = 1, return_noise_components = False,
+                                apply_lsf = False, integrate_delta_wv = False, hwp_angles = None, n_cycles = None, plot = False):
+    '''
+    New version of simulate_stokes_observation_set build from scratch
+    
+    Inputs
+    ------
+    telescope : a psisim telescope object
+    instrument : a psisim instrument object
+    Stokes_model : array-like
+        a 1x4xn stokes vector of model spectra, corresponding to (I,Q,U,V) - stokes spectrum class may be built in the future??
+        expected units are photons/cm^2/s/Angstrom
+    wavelenghts : array, length N
+    stokes_param : string
+        "Q", "U", or "V" your desired stokes parameter to recover - might not be necessary
+    Muellers : array 
+        array of desired measurement matrices to account for instrumental polarization effects
+        if not known, they will be generated based on other inputs
+
+    Kwargs
+    ------
+    inject_noise : boolean
+        if enabled, random draws from computed noise added in spectrum
+    sky_on : boolean
+        if enabled, atmospheric transmission taken into account
+    post_processing_gain : float
+        used to reduce speckle noise, set to np.inf to remove speckle noise completely
+    return_noise_components : boolean
+        if True, separately returns photon, thermal, and read noise
+    apply_lsf : boolean
+
+    integrate_delta_wv : boolean
+
+    hwp_angles : array-like
+        list of desired hwp angles to observe at, if None will assume the best angle for your stokes param
+    n_cycles : integer
+        number of times to repeat hwp rotation cycle, default is 1
+    plot : boolean
+        if True, shows various plots
+
+    Returns
+    -------
+    detector_spectrum : array, dimensions [2*n_cycles*len(hwp_angles),N], units of e-
+        spectrum that gets read off by the detector, each hwp angle produces an o/e beam
+    total_noise : array, dimensions [n_cycles*len(hwp_angles),N], units of e-
+        each o/e pair assumed to have the same noise, read off independently so doubled read noise
+    Muellers : array, dimensions [2*n_cycles*len(hwp_angles),4,4]
+        the generated measurement matrices that got applied to your spectra
+    
+    '''
+
+    # First Generate Measurement Matrices based on desired Stokes component
+    # Apply hwp rotation and wollaston prism, so get two beams out
+    if Muellers is None:
+        Muellers = generate_muellers(stokes_param, hwp_angles, n_cycles)
+
+    # Multiply the input Stokes vector by the measurement matrix to simulate instrumental polarization effects
+    rotated_spectrum = np.matmul(Muellers, Stokes_model) # dim[2*n_cycles*hwp_angles,4,N]
+
+    #Only Carry the Zeroth component through our calculations
+    instrument_spectrum = np.array([S[0] for S in rotated_spectrum]) * Stokes_model.unit # dim[2*n_cycles*len(hwp_angles),N]
+
+    # Multiply spectrum by telescope collecting area
+    instrument_spectrum *= telescope.collecting_area.to(u.cm**2)
+
+    # Multiply the spectrum by atmospheric transmission
+    if sky_on:
+        instrument_spectrum *= telescope.get_atmospheric_transmission(wavelengths,R = instrument.current_R)
+    
+    # Multiply by telescope throughput
+    instrument_spectrum *= telescope.get_telescope_throughput(wavelengths, band = instrument.current_filter)
+    # Multiply by filter transmission
+    instrument_spectrum *= instrument.get_filter_transmission(wavelengths, instrument.current_filter)
+
+    # Account for instrument throughput, assuming no planet/host factors
+    instrument_spectrum *= instrument.get_inst_throughput(wavelengths, planet_flag = False)
+
+    # Multiply by quantum efficiency
+    instrument_spectrum *= instrument.qe #spectrum now in e-/s/Angstrom
+
+    # Get Sky thermal background in photons/s/Angstrom
+    thermal_sky = telescope.get_sky_background(wavelengths,R=instrument.current_R) #Assumes diffraction limited PSF had to multiply by solid angle of PSF.
+    thermal_sky *= telescope.collecting_area.to(u.cm**2) #Multiply by collecting area - units of photons/s/Angstom
+    thermal_sky *= telescope.get_telescope_throughput(wavelengths,band=instrument.current_filter) #Multiply by telescope throughput
+    thermal_sky *= instrument.get_inst_throughput(wavelengths) #Multiply by instrument throughput
+
+    # Get Telescope thermal background in photons/s/Angstrom
+    thermal_telescope = telescope.get_thermal_emission(wavelengths,band=instrument.current_filter)
+    thermal_telescope *= telescope.collecting_area.to(u.cm**2) #Now in units of photons/s/Angstrom
+    thermal_telescope *= instrument.get_inst_throughput(wavelengths) #Multiply by telescope throughput
+
+    # Get the Instrument thermal background in photons/s/Angstrom
+    diffraction_limit = (wavelengths/telescope.diameter.to(u.micron)*u.radian).to(u.arcsec)
+    solidangle = diffraction_limit**2 * 1.13
+    thermal_inst = instrument.get_instrument_background(wavelengths,solidangle) #In units of photons/s/Angstrom
+
+    thermal_flux = thermal_sky + thermal_telescope + thermal_inst
+    thermal_flux *= instrument.qe #e-/s/Angstrom
+
+    #Apply the line-spread function if the user wants to. 
+    if apply_lsf:
+        dwvs = np.abs(wavelengths - np.roll(wavelengths, 1))
+        dwvs[0] = dwvs[1]
+        dwv_mean = np.mean(dwvs)
+        lsf_fwhm = (instrument.lsf_width/dwv_mean).decompose() #Get the lsf_fwhm in units of current wavelength spacing
+        lsf_sigma = lsf_fwhm/(2*np.sqrt(2*np.log(2))) #Convert to sigma
+
+        instrument_spectrum = gaussian_filter(instrument_spectrum, lsf_sigma.value) * instrument_spectrum.unit
+    
+    # Downsample to instrument wavelength sampling
+    intermediate_instrument_spectrum = si.interp1d(wavelengths, instrument_spectrum,fill_value="extrapolate",bounds_error=False)
+    intermediate_thermal_spectrum = si.interp1d(wavelengths, thermal_flux,fill_value="extrapolate",bounds_error=False)
+
+    if integrate_delta_wv:
+        detector_spectrum = []
+        detector_thermal_flux = []
+        #Intergrate over the delta_lambda between each wavelength value.
+        for inst_wv, inst_dwv in zip(instrument.current_wvs, instrument.current_dwvs):
+            wv_start = inst_wv - inst_dwv/2.
+            wv_end = inst_wv + inst_dwv/2.
+
+            flux = 1e4*u.AA/u.micron*integrate.quad(intermediate_instrument_spectrum, wv_start.value, wv_end.value)[0]*instrument_spectrum.unit # detector spectrum now in e-/s (1e4 is for micron to angstrom conversion)
+            thermal_flux = 1e4*u.AA/u.micron*integrate.quad(intermediate_thermal_spectrum, wv_start.value, wv_end.value)[0]*thermal_flux.unit # detector spectrum now in e-/s
+            detector_spectrum.append(flux)
+            detector_thermal_flux.append(thermal_flux)
+
+        detector_spectrum = np.array(detector_spectrum)
+        detector_thermal_flux = np.array(detector_thermal_flux)
+    else:
+        detector_spectrum = 1e4*u.AA/u.micron*intermediate_instrument_spectrum(instrument.current_wvs)*instrument.current_dwvs*instrument_spectrum.unit
+        detector_thermal_flux = 1e4*u.AA/u.micron*intermediate_thermal_spectrum(instrument.current_wvs)*instrument.current_dwvs*thermal_flux.unit
+    
+    # Multiply by exposure time
+    detector_spectrum *= instrument.exposure_time
+    detector_thermal_flux *= instrument.exposure_time #both spectra now in e-
+
+    # Multiply by number of exposures
+    detector_spectrum *= instrument.n_exposures
+    detector_thermal_flux *= instrument.n_exposures
+    
+    # Calulate dark noise
+    dark_current = instrument.dark_current*instrument.exposure_time*instrument.n_exposures*instrument.spatial_sampling
+    detector_thermal_flux += dark_current 
+
+    # Gather noise sources
+    # Returned total_noise array will have doubled read noise to account for o/e beams
+
+    # Speckle noise TBD - I'm working for a single target exposure currently
+
+    read_noise = np.ones(np.shape(wavelengths.value)) * np.sqrt(instrument.n_exposures) * 2*instrument.read_noise * instrument.spatial_sampling
+
+    photon_noise = np.sqrt(detector_spectrum.value + thermal_flux.value) * u.electron
+
+    total_noise = np.sqrt(photon_noise**2 + read_noise**2)
+
+    # Optionally inject noise into the spectrum
+    if inject_noise:
+    # For each point in the spectrum, draw from a normal distribution,
+    # with a mean centered on the spectrum and the standard deviation
+    # equal to the noise
+        for ind,noise in np.ndenumerate(total_noise):
+            i,j=ind
+            # import pdb; pdb.set_trace()
+            ## TODO: Make this poisson so that it's valid still in low photon count regime. 
+            if detector_spectrum[i][j] != detector_spectrum[i][j]:
+                detector_spectrum[i][j] = np.nan
+            else:
+                # import pdb; pdb.set_trace()
+                detector_spectrum[i][j] = np.random.normal(detector_spectrum[i][j].value,noise)*u.electron
+                # detector_stellar_spectrum[i] = np.random.normal(detector_stellar_spectrum[i].value,noise.value)*noise.unit
+
+    if return_noise_components:
+        return detector_spectrum, total_noise, detector_thermal_flux, Muellers, np.array([photon_noise, read_noise])
+    else:
+        return detector_spectrum, total_noise, detector_thermal_flux, Muellers
+
+
+# def stokes_recovery(stokes_param, S_obs_set,pol_noise,Muellers,show_plots = False,simple = True):
+#     '''
+#     A function to invert the measurement matrices and recombine the ordinary/extraordinary beams to effectively recover the original stokes vectors
+    
+#     Parameters
+#     ----------
+#     Outputs from simulate_stokes_observation_set
+#     show_plots = not yet implemented
+
+#     Returns
+#     -------
+#     S_recovered : array, dim[len(hwp_angles)*n_cycles,4,len(wavelength channel)]
+#         recovered spectra
+#     '''
+#     S_recovered = np.empty((S_obs_set.shape[0],4,S_obs_set.shape[-1]))
+#     S_recovered_nomath = np.empty((S_obs_set.shape[0],2,4,S_obs_set.shape[-1]))
+#     # S_recovered = np.empty_like(S_obs_set)
+#     for i in range(S_obs_set.shape[0]):
+#         m_inv_o,m_inv_e = np.linalg.pinv(Muellers[i])
+#         S_rec_o,S_rec_e = np.matmul(m_inv_o,S_obs_set[i][0]),np.matmul(m_inv_e,S_obs_set[i][1])
+#         S_recovered_nomath[i] = S_rec_o,S_rec_e
+#         S_recovered[i] = S_rec_o + S_rec_e 
+        
+#     return S_recovered, S_recovered_nomath
