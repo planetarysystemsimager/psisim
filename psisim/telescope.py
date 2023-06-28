@@ -6,6 +6,7 @@ from astropy.modeling.models import BlackBody
 from psisim import datadir
 from psisim import spectrum
 import psisim.nair as nair
+from scipy import interpolate
 
 class Telescope():
     '''
@@ -216,7 +217,20 @@ class TMT(Telescope):
         throughput = tel_m1_th * tel_m2_th * tel_m3_th
         
         return throughput
+##
+    def get_telescope_throughput_newao(self,wvs):   
+
+        """
+        input: wvs = wavelength in um
     
+        output: telescope throughput
+        """
+        tel_data =np.genfromtxt(datadir + '/throughput/tel_throughput_modhis.csv', delimiter=',', skip_header=1)
+        f_tel=interpolate.interp1d(tel_data[:, 0], tel_data[:, 1], bounds_error=False,fill_value=0)
+        tel_th = f_tel(wvs.value)
+        
+        return tel_th
+##    
     def get_telescope_emissivity(self,wvs,band="TwoMass-J"):
         '''
         Get Telescope emissivity for a given observing band. 
@@ -251,7 +265,7 @@ class TMT(Telescope):
         thermal_emission *= self.get_telescope_emissivity(wvs,band=band)
 
         return thermal_emission
-        
+
 class Keck(Telescope):
     '''
     An implementation of the Telescope class
@@ -381,7 +395,7 @@ class Keck(Telescope):
         thermal_emission *= self.get_telescope_emissivity(wvs,band=band)
 
         return thermal_emission
-        
+
 
 
     

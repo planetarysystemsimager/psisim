@@ -11,6 +11,9 @@ import copy
 from scipy.ndimage.interpolation import shift
 from scipy.ndimage import gaussian_filter
 import warnings
+from scipy.integrate import trapz
+from scipy import interpolate
+
 
 try: 
     import pysynphot as ps
@@ -507,6 +510,148 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
         reflected_flux_ratio = phi * a_v / 4 * (planet_table_entry['PlanetRadius']/planet_table_entry['SMA']).decompose()**2
 
         return thermal_flux_ratio + reflected_flux_ratio
+
+# ---
+
+# +
+def scale_stellar(star_mag,star_filter,star_teff):
+	"""
+	scale spectrum by magnitude
+	inputs: 
+	so: object with all variables
+	mag: magnitude in filter desired
+
+	load new stellar to match bounds of filter since may not match working badnpass elsewhere
+	"""
+	if star_filter[:7] == 'TwoMASS':s_f='2mass'
+	band_star_filter = star_filter[-1]
+	zps_star_filter                     = np.loadtxt('/Users/huihaoz/Downloads/psisim-kpic/psisim/data/filter_profiles/zeropoints.txt',dtype=str).T
+	izp_star_filter                     = np.where((zps_star_filter[0]==s_f) & (zps_star_filter[1]==band_star_filter))[0]
+	filt_zp_star_filter                 = float(zps_star_filter[2][izp_star_filter])
+	#zps                     = np.loadtxt('/Users/huihaoz/Downloads/psisim-kpic/psisim/data/filter_profiles/zeropoints.txt',dtype=str).T
+	#izp                     = np.where((zps[0]==so.filt.family) & (zps[1]==so.filt.band))[0]
+	#so.filt.zp              = float(zps[2][izp])
+	# find filter file and load filter
+	filter_file         = glob.glob('/Users/huihaoz/Downloads/psisim-kpic/psisim/data/filter_profiles/'  + s_f + '_' +band_star_filter + '.txt')[0]
+	#so.filt.filter_file         = glob.glob(so.filt.filter_path + '*' + so.filt.family + '*' +so.filt.band + '.dat')[0]
+	filt_xraw, filt_yraw  = np.loadtxt(filter_file).T # nm, transmission out of 1
+	if np.max(filt_xraw)>5000: filt_xraw /= 10
+	if np.max(filt_xraw) < 10: filt_xraw *= 1000
+
+#	f_filter                       = interpolate.interp1d(filt_xraw, filt_yraw, bounds_error=False,fill_value=0)
+#	filt_v, filt_s    = wvs, f_filter(wvs)  #filter profile sampled at stellar
+
+	filt_dl_l                 = np.mean(integrate(filt_xraw, filt_yraw)/filt_xraw) # dlambda/lambda
+	filt_center_wavelength    = integrate(filt_xraw,filt_yraw*filt_xraw)/integrate(filt_xraw,filt_yraw)
+
+	if star_teff.value < 2300: # sonora models arent sampled as well so use phoenix as low as can
+		g    = '316' # mks units, np.log10(316 * 100)=4.5 to match what im holding for phoenix models.
+		teff = str(int(star_teff.value))
+		stel_file         = '/Users/huihaoz/Downloads/psisim-kpic/scr3/dmawet/ETC/sonora/' + 'sp_t%sg%snc_m0.0' %(teff,g)
+		stelv,stels = load_sonora(stel_file,wav_start=np.min(filt_xraw), wav_end=np.max(filt_xraw))
+	else:
+		teff = str(int(star_teff.value)).zfill(5)
+		stel_file         = '/Users/huihaoz/Downloads/psisim-kpic/scr3/dmawet/ETC/HIResFITS_lib/phoenix.astro.physik.uni-goettingen.de/HIResFITS/PHOENIX-ACES-AGSS-COND-2011/Z-0.0/' + 'lte%s-4.50-0.0.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'%(teff)
+		stelv,stels = load_phoenix(stel_file,wav_start=np.min(filt_xraw), wav_end=np.max(filt_xraw))
+	filt_interp       =  interpolate.interp1d(filt_xraw, filt_yraw, bounds_error=False,fill_value=0)
+
+	filtered_stellar   = stels * filt_interp(stelv)    # filter profile resampled to phoenix times phoenix flux density
+	nphot_expected_0   = calc_nphot(filt_dl_l, filt_zp_star_filter , star_mag)    # what's the integrated flux supposed to be in photons/m2/s?
+	nphot_phoenix      = integrate(stelv,filtered_stellar)            # what's the integrated flux now? in same units as ^
+	
+	return nphot_expected_0/nphot_phoenix
+def integrate(x,y):
+    """
+    Integrate y wrt x
+    """
+    return trapz(y,x=x)
+def load_phoenix(stelname,wav_start=750,wav_end=780):
+	"""
+	load fits file stelname with stellar spectrum from phoenix 
+	http://phoenix.astro.physik.uni-goettingen.de/?page_id=15
+	
+	return subarray 
+	
+	wav_start, wav_end specified in nm
+	
+	convert s from egs/s/cm2/cm to phot/cm2/s/nm using
+	https://hea-www.harvard.edu/~pgreen/figs/Conversions.pdf
+	"""
+	
+	# conversion factor
+
+	f = fits.open(stelname)
+	spec = f[0].data / (1e8) # ergs/s/cm2/cm to ergs/s/cm2/Angstrom for conversion
+	f.close()
+	
+	path = stelname.split('/')
+	wave_file = '/' + os.path.join(*stelname.split('/')[0:-1]) + '/' + \
+					'WAVE_PHOENIX-ACES-AGSS-COND-2011.fits' #assume wave in same folder
+	f = fits.open(wave_file)
+	lam = f[0].data # angstroms
+	f.close()
+	
+	# Convert
+	conversion_factor = 5.03*10**7 * lam #lam in angstrom here
+	spec *= conversion_factor # phot/cm2/s/angstrom
+	
+	# Take subarray requested
+	isub = np.where( (lam > wav_start*10.0) & (lam < wav_end*10.0))[0]
+
+	# Convert 
+	return lam[isub]/10.0,spec[isub] * 10 * 100**2 #nm, phot/m2/s/nm
+def load_sonora(stelname,wav_start=750,wav_end=780):
+	"""
+	load sonora model file
+	
+	return subarray 
+	
+	wav_start, wav_end specified in nm
+	
+	convert s from erg/cm2/s/Hz to phot/cm2/s/nm using
+	https://hea-www.harvard.edu/~pgreen/figs/Conversions.pdf
+
+	wavelenght loaded is microns high to low
+	"""
+	f = np.loadtxt(stelname,skiprows=2)
+
+	lam  = 10000* f[:,0][::-1] #microns to angstroms, needed for conversiosn
+	spec = f[:,1][::-1] # erg/cm2/s/Hz
+	
+	spec *= 3e18/(lam**2)# convert spec to erg/cm2/s/angstrom
+	
+	conversion_factor = 5.03*10**7 * lam #lam in angstrom here
+	spec *= conversion_factor # phot/cm2/s/angstrom
+	
+	isub = np.where( (lam > wav_start*10.0) & (lam < wav_end*10.0))[0]
+
+	return lam[isub]/10.0,spec[isub] * 10 * 100**2 #nm, phot/m2/s/nm (my fave)
+def calc_nphot(dl_l, zp, mag):
+	"""
+	http://astroweb.case.edu/ssm/ASTR620/mags.html
+
+	Values are all for a specific bandpass, can refer to table at link ^ for values
+	for some bands. Function will return the photons per second per meter squared
+	at the top of Earth atmosphere for an object of specified magnitude
+
+	inputs:
+	-------
+	dl_l: float, delta lambda over lambda for the passband
+	zp: float, flux at m=0 in Jansky
+	mag: stellar magnitude
+
+	outputs:
+	--------
+	photon flux
+	"""
+	phot_per_s_m2_per_Jy = 1.51*10**7# convert to phot/s/m2 from Jansky
+
+	return dl_l * zp * 10**(-0.4*mag) * phot_per_s_m2_per_Jy
+
+
+# -
+
+# ---
 
 def get_stellar_spectrum(planet_table_entry,wvs,R,model='Castelli-Kurucz',verbose=False,
                         user_params = None,

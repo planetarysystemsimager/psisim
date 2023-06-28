@@ -188,6 +188,165 @@ def simulate_observation(telescope,instrument,planet_table_entry,planet_spectrum
     else:
         return detector_spectrum, total_noise, detector_stellar_spectrum,detector_thermal_flux
 
+def simulate_observation_singletarget(telescope, instrument, wavelengths, model_spectrum,planet_table_entry,ao_booster,
+                                inject_noise = False, sky_on = False, post_processing_gain = 1, return_noise_components = False,
+                                apply_lsf = False, integrate_delta_wv = False):
+    '''
+    A simplified version of simulate_observation for single target observations
+    
+    Inputs
+    ------
+    telescope : a psisim telescope object
+    instrument : a psisim instrument object
+    model_spectrum : a psisim spectrum object
+        expected units are photons/cm^2/s/Angstrom
+    wavelengths : array, length N
+
+    Kwargs
+    ------
+    inject_noise : boolean
+        if enabled, random draws from computed noise added in spectrum
+    sky_on : boolean
+        if enabled, atmospheric transmission taken into account
+    post_processing_gain : float
+        used to reduce speckle noise, set to np.inf to remove speckle noise completely
+    return_noise_components : boolean
+        if True, separately returns photon, thermal, and read noise
+    apply_lsf : boolean
+    integrate_delta_wv : boolean
+
+    Returns
+    -------
+    detector_spectrum : array, units of e-
+        spectrum that gets read off by the detector
+    total_noise : arraylike, units of e-
+        photon + read noise (not considering speckle noise)
+    detector_thermal_flux : arraylike, units of e-
+
+    
+    '''
+    # Multiply spectrum by telescope collecting area
+    instrument_spectrum = model_spectrum * telescope.collecting_area.to(u.cm**2)
+
+    # Multiply the spectrum by atmospheric transmission if requested
+    if sky_on:
+        instrument_spectrum *= telescope.get_atmospheric_transmission(wavelengths,R = instrument.current_R)
+    
+    # Multiply by telescope throughput
+    instrument_spectrum *= telescope.get_telescope_throughput_newao(wavelengths)
+
+    # Multiply by filter transmission
+    instrument_spectrum *= instrument.get_filter_transmission(wavelengths, instrument.current_filter)
+
+    # Account for instrument throughput, assuming no planet/host factors
+    instrument_spectrum *= instrument.get_inst_throughput_newao(wavelengths, planet_flag = False)
+    
+    # ao coupling
+    coup, ho_str=instrument.pick_coupling(w=wavelengths,factor_0=ao_booster,teff=planet_table_entry["StarTeff"])
+    instrument_spectrum *= coup
+
+    # Multiply by quantum efficiency
+    instrument_spectrum *= instrument.qe #spectrum now in e-/s/Angstrom
+
+    # Get Sky thermal background in photons/s/Angstrom
+    thermal_sky = telescope.get_sky_background(wavelengths,R=instrument.current_R) #Assumes diffraction limited PSF had to multiply by solid angle of PSF.
+    thermal_sky *= telescope.collecting_area.to(u.cm**2) #Multiply by collecting area - units of photons/s/Angstom
+    thermal_sky *= telescope.get_telescope_throughput_newao(wavelengths) #Multiply by telescope throughput
+    thermal_sky *= instrument.get_inst_throughput_newao(wavelengths) #Multiply by instrument throughput
+    thermal_sky *= coup
+    
+    ## total throughput of instrument
+    tot_th_instrument = coup * instrument.get_inst_throughput_newao(wavelengths) * telescope.get_telescope_throughput_newao(wavelengths)
+    
+    # Get Telescope thermal background in photons/s/Angstrom
+    thermal_telescope = telescope.get_thermal_emission(wavelengths,band=instrument.current_filter)
+    thermal_telescope *= telescope.collecting_area.to(u.cm**2) #Now in units of photons/s/Angstrom
+    thermal_telescope *= instrument.get_inst_throughput_newao(wavelengths) #Multiply by telescope throughput
+    thermal_telescope *= coup
+    
+    # Get the Instrument thermal background in photons/s/Angstrom
+    diffraction_limit = (wavelengths/telescope.diameter.to(u.micron)*u.radian).to(u.arcsec)
+    solidangle = diffraction_limit**2 * 1.13
+    thermal_inst = instrument.get_instrument_background(wavelengths,solidangle) #In units of photons/s/Angstrom
+
+    thermal_flux = thermal_sky + thermal_telescope + thermal_inst
+    thermal_flux *= instrument.qe #e-/s/Angstrom
+
+    #Apply the line-spread function if the user wants to. 
+    if apply_lsf:
+        dwvs = np.abs(wavelengths - np.roll(wavelengths, 1))
+        dwvs[0] = dwvs[1]
+        dwv_mean = np.mean(dwvs)
+        lsf_fwhm = (instrument.lsf_width/dwv_mean).decompose() #Get the lsf_fwhm in units of current wavelength spacing
+        lsf_sigma = lsf_fwhm/(2*np.sqrt(2*np.log(2))) #Convert to sigma
+
+        instrument_spectrum = gaussian_filter(instrument_spectrum, lsf_sigma.value) * instrument_spectrum.unit
+    
+    # Downsample to instrument wavelength sampling
+    intermediate_instrument_spectrum = si.interp1d(wavelengths, instrument_spectrum,fill_value="extrapolate",bounds_error=False)
+    intermediate_thermal_spectrum = si.interp1d(wavelengths, thermal_flux,fill_value="extrapolate",bounds_error=False)
+
+    if integrate_delta_wv:
+        detector_spectrum = []
+        detector_thermal_flux = []
+        #Intergrate over the delta_lambda between each wavelength value.
+        for inst_wv, inst_dwv in zip(instrument.current_wvs, instrument.current_dwvs):
+            wv_start = inst_wv - inst_dwv/2.
+            wv_end = inst_wv + inst_dwv/2.
+
+            flux = 1e4*u.AA/u.micron*integrate.quad(intermediate_instrument_spectrum, wv_start.value, wv_end.value)[0]*instrument_spectrum.unit # detector spectrum now in e-/s (1e4 is for micron to angstrom conversion)
+            thermal_flux = 1e4*u.AA/u.micron*integrate.quad(intermediate_thermal_spectrum, wv_start.value, wv_end.value)[0]*thermal_flux.unit # detector spectrum now in e-/s
+            detector_spectrum.append(flux)
+            detector_thermal_flux.append(thermal_flux)
+
+        detector_spectrum = np.array(detector_spectrum)
+        detector_thermal_flux = np.array(detector_thermal_flux)
+    else:
+        detector_spectrum = 1e4*u.AA/u.micron*intermediate_instrument_spectrum(instrument.current_wvs)*instrument.current_dwvs*instrument_spectrum.unit
+        detector_thermal_flux = 1e4*u.AA/u.micron*intermediate_thermal_spectrum(instrument.current_wvs)*instrument.current_dwvs*thermal_flux.unit
+    
+    # Multiply by exposure time
+    detector_spectrum *= instrument.exposure_time
+    detector_thermal_flux *= instrument.exposure_time #both spectra now in e-
+
+    # Multiply by number of exposures
+    detector_spectrum *= instrument.n_exposures
+    detector_thermal_flux *= instrument.n_exposures
+    
+    # Calulate dark noise
+    dark_current = instrument.dark_current*instrument.exposure_time*instrument.n_exposures*instrument.spatial_sampling
+    detector_thermal_flux += dark_current 
+
+    # Gather noise sources
+    # Ignoring speckle noise for single target observations - old note in PSISIM code says
+    read_noise = np.ones(np.shape(wavelengths.value)) * np.sqrt(instrument.n_exposures) * instrument.read_noise * instrument.spatial_sampling
+
+    photon_noise = np.sqrt(detector_spectrum.value + thermal_flux.value) * u.electron
+
+    total_noise = np.sqrt(photon_noise**2 + read_noise**2)
+
+    # Optionally inject noise into the spectrum
+    if inject_noise:
+    # For each point in the spectrum, draw from a normal distribution,
+    # with a mean centered on the spectrum and the standard deviation
+    # equal to the noise
+        for ind,noise in np.ndenumerate(total_noise):
+            i,j=ind
+            # import pdb; pdb.set_trace()
+            ## TODO: Make this poisson so that it's valid still in low photon count regime. 
+            if detector_spectrum[i][j] != detector_spectrum[i][j]:
+                detector_spectrum[i][j] = np.nan
+            else:
+                # import pdb; pdb.set_trace()
+                detector_spectrum[i][j] = np.random.normal(detector_spectrum[i][j].value,noise)*u.electron
+                # detector_stellar_spectrum[i] = np.random.normal(detector_stellar_spectrum[i].value,noise.value)*noise.unit
+
+    if return_noise_components:
+        return detector_spectrum, total_noise, detector_thermal_flux, np.array([photon_noise, read_noise]),tot_th_instrument
+    else:
+        return detector_spectrum, total_noise, detector_thermal_flux,tot_th_instrument
+
+
 def simulate_observation_nosky(telescope,instrument,planet_table_entry,planet_spectrum,wvs,spectrum_R,
     inject_noise=True,verbose=False,post_processing_gain = 1,return_noise_components=False,stellar_spec=None,
     apply_lsf=False,integrate_delta_wv=False,no_speckle_noise=False,plot=False):
