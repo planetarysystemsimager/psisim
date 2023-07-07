@@ -217,20 +217,26 @@ class TMT(Telescope):
         throughput = tel_m1_th * tel_m2_th * tel_m3_th
         
         return throughput
-##
+####
     def get_telescope_throughput_newao(self,wvs):   
 
         """
         input: wvs = wavelength in um
     
         output: telescope throughput
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+
+        source of the file: official TMT throuhhput, source Garreth Ruane, date: Jun 29, 2023. 
         """
         tel_data =np.genfromtxt(datadir + '/throughput/tel_throughput_modhis.csv', delimiter=',', skip_header=1)
         f_tel=interpolate.interp1d(tel_data[:, 0], tel_data[:, 1], bounds_error=False,fill_value=0)
         tel_th = f_tel(wvs.value)
         
         return tel_th
-##    
+####    
     def get_telescope_emissivity(self,wvs,band="TwoMass-J"):
         '''
         Get Telescope emissivity for a given observing band. 
@@ -342,6 +348,27 @@ class Keck(Telescope):
             sky_trans_interp = tmp_spec.downsample_spectrum(R)
 
         return sky_trans_interp
+####
+    def get_telescope_throughput_newao(self,wvs):   
+
+        """
+        input: wvs = wavelength in um
+    
+        output: telescope throughput
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+
+        source of the file: official Keck throuhhput, source Garreth Ruane, date: Jun 29, 2023. 
+        
+        """
+        tel_data =np.genfromtxt(datadir + '/throughput/tel_throughput_hispec.csv', delimiter=',', skip_header=1)
+        f_tel=interpolate.interp1d(tel_data[:, 0], tel_data[:, 1], bounds_error=False,fill_value=0)
+        tel_th = f_tel(wvs.value)
+        
+        return tel_th
+#### 
 
     def get_telescope_throughput(self,wvs,band="TwoMass-J"):
         '''

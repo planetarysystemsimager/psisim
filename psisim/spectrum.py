@@ -13,6 +13,8 @@ from scipy.ndimage import gaussian_filter
 import warnings
 from scipy.integrate import trapz
 from scipy import interpolate
+import pandas as pd
+from psisim import datadir
 
 
 try: 
@@ -514,7 +516,126 @@ def simulate_spectrum(planet_table_entry,wvs,R,atmospheric_parameters,package="p
 # ---
 
 # +
-def scale_stellar(star_mag,star_filter,star_teff):
+####
+
+def ao_coupling(instrument,ao_mode,ao_filter,ao_band_mag):   
+    """
+    
+    date of the change: Jun 29, 2023
+
+    Huihao Zhang (zhang.12043@osu.edu)
+
+    Based on function "ao" in specsim (https://github.com/ashbake/specsim/blob/main/utils/load_inputs.py)
+    """
+    if ao_filter == 'Johnson':
+        if instrument=='modhis':
+            path= datadir+'/aowfe/'
+            f_howfe = pd.read_csv(path+'HOWFE_NFIRAOS.csv',header=[0,1])
+            #ao_modes = f.columns
+            mags_howfe             = f_howfe['mag'].values.T[0]
+            wfes_howfe             = f_howfe[ao_mode].values.T[0]
+            ao_ho_wfe_band= f_howfe[ao_mode].columns[0] # this is the mag band wfe is defined in, must be more readable way..
+            ho_wfe_mag =  ao_band_mag# get magnitude of star in appropriate band
+            #ho_wfe_mag = 21 
+            f_howfe          = interpolate.interp1d(mags_howfe,wfes_howfe, bounds_error=False,fill_value=10000)
+            ao_ho_wfe     = float(f_howfe(ho_wfe_mag))
+
+            f_ttdynamic = pd.read_csv(path+'TTDYNAMIC_NFIRAOS.csv',header=[0,1])
+            #ao_modes_tt  = f.columns # should match howfe..
+            mags_ttdynamic            = f_ttdynamic['mag'].values.T[0]
+            tts_ttdynamic             = f_ttdynamic[ao_mode].values.T[0]
+            ao_ttdynamic_band=f_ttdynamic[ao_mode].columns[0] # this is the mag band wfe is defined in, must be more readable way..			
+            ao_ttdynamic_mag = ao_band_mag # get magnitude of star in appropriate band
+            #ao_ttdynamic_mag = 21  # get magnitude of star in appropriate band
+            f_ttdynamic=  interpolate.interp1d(mags_ttdynamic,tts_ttdynamic, bounds_error=False,fill_value=10000)
+            ao_tt_dynamic     = float(f_ttdynamic(ao_ttdynamic_mag))
+            return ao_ho_wfe, ao_tt_dynamic
+            
+        elif instrument=='hispec':
+            path= datadir+'/aowfe/'
+            f_howfe = pd.read_csv(path+'HOwfe.csv',header=[0,1])
+            #ao_modes = f.columns
+            mags_howfe             = f_howfe['mag'].values.T[0]
+            wfes_howfe             = f_howfe[ao_mode].values.T[0]
+            ao_ho_wfe_band= f_howfe[ao_mode].columns[0] # this is the mag band wfe is defined in, must be more readable way..
+            ho_wfe_mag =  ao_band_mag# get magnitude of star in appropriate band
+            #ho_wfe_mag = 21 
+            f_howfe          = interpolate.interp1d(mags_howfe,wfes_howfe, bounds_error=False,fill_value=10000)
+            ao_ho_wfe     = float(f_howfe(ho_wfe_mag))
+
+            f_ttdynamic = pd.read_csv(path+'TT_dynamic.csv',header=[0,1])
+            #ao_modes_tt  = f.columns # should match howfe..
+            mags_ttdynamic            = f_ttdynamic['mag'].values.T[0]
+            tts_ttdynamic             = f_ttdynamic[ao_mode].values.T[0]
+            ao_ttdynamic_band=f_ttdynamic[ao_mode].columns[0] # this is the mag band wfe is defined in, must be more readable way..			
+            ao_ttdynamic_mag = ao_band_mag # get magnitude of star in appropriate band
+            #ao_ttdynamic_mag = 21  # get magnitude of star in appropriate band
+            f_ttdynamic=  interpolate.interp1d(mags_ttdynamic,tts_ttdynamic, bounds_error=False,fill_value=10000)
+            ao_tt_dynamic     = float(f_ttdynamic(ao_ttdynamic_mag))
+            return ao_ho_wfe, ao_tt_dynamic
+            
+        else:
+            raise ValueError("Currently, only modhis and hispec is supported")
+        
+        
+    
+    else:
+        raise ValueError("Currently, only Johnson is supported")
+
+
+# -
+
+def get_band_mag(family,band,factor_0,teff_s,path):
+    """
+    
+    date of the change: Jun 29, 2023
+
+    Huihao Zhang (zhang.12043@osu.edu)
+
+    Based on function "get_band_mag" and "load_filter" in specsim (https://github.com/ashbake/specsim/blob/main/utils/load_inputs.py)
+    
+    """
+    filter_file    = glob.glob(datadir+'/filter_profiles/'  +'*' + family + '*' +band + '.dat')[0]
+    ao_flt_raw, ao_flt_yraw     = np.loadtxt(filter_file).T # nm, transmission out of 1
+    x_ao,y_ao=ao_flt_raw/10, ao_flt_yraw
+    filt_interp  = interpolate.interp1d(x_ao, y_ao, bounds_error=False,fill_value=0)
+    dl_l_ao         = np.mean(integrate(x_ao,y_ao)/x_ao) # dlambda/lambda to account for spectral fraction
+#    vraw,sraw = load_phoenix(stel_file,wav_start=np.min(x_ao), wav_end=np.max(x_ao))
+    # load stellar the multiply by scaling factor, factor_0, and filter. integrate
+#    if (np.min(x) < so.inst.l0) or (np.max(x) > so.inst.l1):
+#        if so.stel.model=='phoenix':
+#            vraw,sraw = load_phoenix(so.stel.stel_file,wav_start=np.min(x), wav_end=np.max(x)) #phot/m2/s/nm
+#        elif so.stel.model=='sonora':
+#            vraw,sraw = load_sonora(so.stel.stel_file,wav_start=np.min(x), wav_end=np.max(x)) #phot/m2/s/nm
+#    else:
+#        vraw,sraw = so.stel.vraw, so.stel.sraw
+    if teff_s.value < 2300: # sonora models arent sampled as well so use phoenix as low as can
+        g    = '316' # mks units, np.log10(316 * 100)=4.5 to match what im holding for phoenix models.
+        teff = str(int(teff_s.value))
+        stel_file         = path + '/sonora/' + 'sp_t%sg%snc_m0.0' %(teff,g)
+        vraw,sraw = load_sonora(stel_file,wav_start=np.min(x_ao), wav_end=np.max(x_ao))
+
+    else:
+        teff = str(int(teff_s.value)).zfill(5)
+        stel_file         = path +'/HIResFITS_lib/phoenix.astro.physik.uni-goettingen.de/HIResFITS/PHOENIX-ACES-AGSS-COND-2011/Z-0.0/' + 'lte%s-4.50-0.0.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'%(teff)
+        vraw,sraw = load_phoenix(stel_file,wav_start=np.min(x_ao), wav_end=np.max(x_ao))
+
+    filtered_stel = factor_0 * sraw * filt_interp(vraw)
+    flux = integrate(vraw,filtered_stel)    #phot/m2/s
+
+    phot_per_s_m2_per_Jy = 1.51*10**7 # convert to phot/s/m2 from Jansky
+
+    flux_Jy = flux/phot_per_s_m2_per_Jy/dl_l_ao
+
+    zps_ao                     = np.loadtxt(datadir+'/filter_profiles/zeropoints.txt',dtype=str).T
+    izp_ao                     = np.where((zps_ao[0]==family) & (zps_ao[1]==band))[0]
+    zp_ao                 = float(zps_ao[2][izp_ao])
+    mag_ho_wfe = -2.5*np.log10(flux_Jy/zp_ao)
+    return  mag_ho_wfe
+
+
+# +
+def scale_stellar(star_mag,star_filter,star_teff,path):
 	"""
 	scale spectrum by magnitude
 	inputs: 
@@ -522,24 +643,25 @@ def scale_stellar(star_mag,star_filter,star_teff):
 	mag: magnitude in filter desired
 
 	load new stellar to match bounds of filter since may not match working badnpass elsewhere
+    
+	date of the change: Jun 29, 2023
+
+	Huihao Zhang (zhang.12043@osu.edu)
+
+	Based on function "get_band_mag" and "load_filter" in specsim (https://github.com/ashbake/specsim/blob/main/utils/load_inputs.py)
+
+    
 	"""
 	if star_filter[:7] == 'TwoMASS':s_f='2mass'
 	band_star_filter = star_filter[-1]
-	zps_star_filter                     = np.loadtxt('/Users/huihaoz/Downloads/psisim-kpic/psisim/data/filter_profiles/zeropoints.txt',dtype=str).T
+	zps_star_filter                     = np.loadtxt(datadir+'/filter_profiles/zeropoints.txt',dtype=str).T
 	izp_star_filter                     = np.where((zps_star_filter[0]==s_f) & (zps_star_filter[1]==band_star_filter))[0]
 	filt_zp_star_filter                 = float(zps_star_filter[2][izp_star_filter])
-	#zps                     = np.loadtxt('/Users/huihaoz/Downloads/psisim-kpic/psisim/data/filter_profiles/zeropoints.txt',dtype=str).T
-	#izp                     = np.where((zps[0]==so.filt.family) & (zps[1]==so.filt.band))[0]
-	#so.filt.zp              = float(zps[2][izp])
-	# find filter file and load filter
-	filter_file         = glob.glob('/Users/huihaoz/Downloads/psisim-kpic/psisim/data/filter_profiles/'  + s_f + '_' +band_star_filter + '.txt')[0]
-	#so.filt.filter_file         = glob.glob(so.filt.filter_path + '*' + so.filt.family + '*' +so.filt.band + '.dat')[0]
+	filter_file         = glob.glob(datadir+'/filter_profiles/'  + s_f + '_' +band_star_filter + '.txt')[0]
 	filt_xraw, filt_yraw  = np.loadtxt(filter_file).T # nm, transmission out of 1
 	if np.max(filt_xraw)>5000: filt_xraw /= 10
 	if np.max(filt_xraw) < 10: filt_xraw *= 1000
 
-#	f_filter                       = interpolate.interp1d(filt_xraw, filt_yraw, bounds_error=False,fill_value=0)
-#	filt_v, filt_s    = wvs, f_filter(wvs)  #filter profile sampled at stellar
 
 	filt_dl_l                 = np.mean(integrate(filt_xraw, filt_yraw)/filt_xraw) # dlambda/lambda
 	filt_center_wavelength    = integrate(filt_xraw,filt_yraw*filt_xraw)/integrate(filt_xraw,filt_yraw)
@@ -547,11 +669,11 @@ def scale_stellar(star_mag,star_filter,star_teff):
 	if star_teff.value < 2300: # sonora models arent sampled as well so use phoenix as low as can
 		g    = '316' # mks units, np.log10(316 * 100)=4.5 to match what im holding for phoenix models.
 		teff = str(int(star_teff.value))
-		stel_file         = '/Users/huihaoz/Downloads/psisim-kpic/scr3/dmawet/ETC/sonora/' + 'sp_t%sg%snc_m0.0' %(teff,g)
+		stel_file         = path+'/sonora/' + 'sp_t%sg%snc_m0.0' %(teff,g)
 		stelv,stels = load_sonora(stel_file,wav_start=np.min(filt_xraw), wav_end=np.max(filt_xraw))
 	else:
 		teff = str(int(star_teff.value)).zfill(5)
-		stel_file         = '/Users/huihaoz/Downloads/psisim-kpic/scr3/dmawet/ETC/HIResFITS_lib/phoenix.astro.physik.uni-goettingen.de/HIResFITS/PHOENIX-ACES-AGSS-COND-2011/Z-0.0/' + 'lte%s-4.50-0.0.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'%(teff)
+		stel_file         = path+'/HIResFITS_lib/phoenix.astro.physik.uni-goettingen.de/HIResFITS/PHOENIX-ACES-AGSS-COND-2011/Z-0.0/' + 'lte%s-4.50-0.0.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'%(teff)
 		stelv,stels = load_phoenix(stel_file,wav_start=np.min(filt_xraw), wav_end=np.max(filt_xraw))
 	filt_interp       =  interpolate.interp1d(filt_xraw, filt_yraw, bounds_error=False,fill_value=0)
 
@@ -560,9 +682,15 @@ def scale_stellar(star_mag,star_filter,star_teff):
 	nphot_phoenix      = integrate(stelv,filtered_stellar)            # what's the integrated flux now? in same units as ^
 	
 	return nphot_expected_0/nphot_phoenix
+
 def integrate(x,y):
     """
-    Integrate y wrt x
+    date of the change: Jun 29, 2023
+
+    Huihao Zhang (zhang.12043@osu.edu)
+
+    Based on function "integrate" in specsim (https://github.com/ashbake/specsim/blob/main/utils/functions.py)
+
     """
     return trapz(y,x=x)
 def load_phoenix(stelname,wav_start=750,wav_end=780):
@@ -576,6 +704,12 @@ def load_phoenix(stelname,wav_start=750,wav_end=780):
 	
 	convert s from egs/s/cm2/cm to phot/cm2/s/nm using
 	https://hea-www.harvard.edu/~pgreen/figs/Conversions.pdf
+    
+	date of the change: Jun 29, 2023
+
+	Huihao Zhang (zhang.12043@osu.edu)
+
+	Based on function "load_phoenix" in specsim (https://github.com/ashbake/specsim/blob/main/utils/load_inputs.py)
 	"""
 	
 	# conversion factor
@@ -612,6 +746,13 @@ def load_sonora(stelname,wav_start=750,wav_end=780):
 	https://hea-www.harvard.edu/~pgreen/figs/Conversions.pdf
 
 	wavelenght loaded is microns high to low
+    
+	date of the change: Jun 29, 2023
+
+	Huihao Zhang (zhang.12043@osu.edu)
+
+	Based on function "load_sonora" in specsim (https://github.com/ashbake/specsim/blob/main/utils/load_inputs.py)
+
 	"""
 	f = np.loadtxt(stelname,skiprows=2)
 
@@ -643,12 +784,19 @@ def calc_nphot(dl_l, zp, mag):
 	outputs:
 	--------
 	photon flux
+    
+	date of the change: Jun 29, 2023
+
+	Huihao Zhang (zhang.12043@osu.edu)
+
+	Based on function "calc_nphot" in specsim (https://github.com/ashbake/specsim/blob/main/utils/load_inputs.py)
+
 	"""
 	phot_per_s_m2_per_Jy = 1.51*10**7# convert to phot/s/m2 from Jansky
 
 	return dl_l * zp * 10**(-0.4*mag) * phot_per_s_m2_per_Jy
-
-
+    
+####
 # -
 
 # ---

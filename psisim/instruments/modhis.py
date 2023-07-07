@@ -1,4 +1,3 @@
-# +
 import os
 import glob
 import scipy.interpolate as si
@@ -12,9 +11,6 @@ from astropy.modeling.models import BlackBody
 import pandas as pd
 from scipy.integrate import trapz
 from astropy.io import fits
-
-
-# -
 
 import psisim
 from psisim.instruments.hispec import hispec
@@ -76,7 +72,6 @@ class modhis(hispec):
         #Acceptable observing filters
         # TODO: add whatever remaining filters MODHIS will have
         self.filters = ["CFHT-Y","TwoMASS-J",'TwoMASS-H','TwoMASS-K']
-
         # The current obseving properties - dynamic
         self.exposure_time = None
         self.n_exposures = None
@@ -84,6 +79,8 @@ class modhis(hispec):
         self.current_wvs = None
         self.current_dwvs = None
         self.ao_mag = None
+        self.ao_ho_wfe = None
+        self.ao_tt_dynamic = None
         self.mode = None
         self.vortex_charge = None      # for vfn only
         self.host_diameter= 0.0*u.mas  # for vfn only (default 0 disables geometric leak.)
@@ -165,26 +162,7 @@ class modhis(hispec):
         return wavelengths
                   
 
-    def get_inst_emissivity(self,wvs):
-        '''
-        The instrument emissivity
-        '''
-        # SR should not be included in emissivity, so will divide from throughput
-        SR = self.compute_SR(wvs)
-        if self.mode == 'vfn':
-            SR = np.ones(SR.shape)
-
-        static_coupling_diff_tmt = 0.655
-        piaa_boost = 1.3
-
-        # TODO: do we want to use the throughput w/ or w/o the planet losses?
-        return (1-self.get_inst_throughput(wvs) / SR / piaa_boost / static_coupling_diff_tmt)
-
-    def get_fei_emissivity(self,wvs):
-        return (1-self.get_fei_throughput(wvs))
-
-    def get_fiber_emissivity(self, wvs):
-        return (1 - self.get_fiber_throughput(wvs))
+        
     def get_inst_throughput(self,wvs,planet_flag=False,planet_sep=None):
         '''
         Reads instrument throughput from budget file and interpolates to given wavelengths
@@ -237,23 +215,6 @@ class modhis(hispec):
 
         return th_inst
     
-    def compute_SR(self,wave):
-        '''
-        Compute the Strehl ratio given the wavelengths, host magnitude and telescope (which contains observing conditions)
-        '''
-
-        path = self.telescope.path
-
-        #Get the AO WFE as a function of rmag
-        ao_rmag,ao_wfe_ngs,ao_wfe_lgs = self.load_scale_aowfe(self.telescope.seeing,self.telescope.airmass,
-                                                              site_median_seeing=self.telescope.median_seeing)
-
-        # Take minimum wavefront error between natural guide star and laser guide star
-        ao_wfe = np.min([np.interp(self.ao_mag,ao_rmag, ao_wfe_ngs.value),np.interp(self.ao_mag,ao_rmag, ao_wfe_lgs.value)]) * u.nm
-
-        #Compute the strehl ratio
-        SR = np.array(np.exp(-(2*np.pi*ao_wfe.to(u.micron)/wave)**2))
-        return SR
     
     def get_fei_throughput(self, wvs):
 
@@ -303,7 +264,7 @@ class modhis(hispec):
         th_fiber = fiberin_th * fiberprop_th * fiber_break * fiberout_th
         return th_fiber
 
-##
+####
 
     def get_inst_throughput_newao(self,wvs,planet_flag=False,planet_sep=None):
         '''
@@ -313,6 +274,15 @@ class modhis(hispec):
         Kwargs:
         planet_flag     - Boolean denoting if planet-specific separation losses should be accounted for [default False]
         planet_sep      - [in arcsecond] Float of angular separation at which to determine planet throughput
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+        
+        Based on function "instrument" in specsim (https://github.com/ashbake/specsim/blob/main/utils/load_inputs.py)
+        (Currently, track camera is not supported, so "so.ao.pywfs_dichroic" is not needed)
+        Based on function "get_base_throughput" in specsim (https://github.com/ashbake/specsim/blob/main/utils/throughput_tools.py)
+        
         '''
 
         if self.current_filter not in self.filters:
@@ -351,6 +321,9 @@ class modhis(hispec):
         blue_range_index = np.where((wvs.value<=1.4))
         
         base_throughput = np.concatenate([base_throughput_blue[blue_range_index],base_throughput_red[red_range_index]])
+        coupling = self.pick_coupling(w=wvs)
+        if self.mode == 'vfn':
+            coupling = np.ones(coupling.shape)
         if planet_flag:
             # Get separation-dependent planet throughput
             th_planet = self.get_planet_throughput(planet_sep, wvs)[0]
@@ -360,7 +333,7 @@ class modhis(hispec):
 
         #TODO: figure out if SR is needed for VFN (thinking it's not)
 
-        th_inst =base_throughput * th_planet
+        th_inst =base_throughput * th_planet * coupling
 
         return th_inst
     
@@ -369,6 +342,13 @@ class modhis(hispec):
         input: wvs = wavelength in um
     
         output: AO throughput
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+
+        file: official MODHIS ao throuhhput, source: Garreth Ruane, date: Jun 29, 2023. 
+
         """
         ao_data =np.genfromtxt(datadir + '/throughput/ao_throughput_modhis.csv', delimiter=',', skip_header=1)
         f_ao=interpolate.interp1d(ao_data[:, 0], ao_data[:, 1], bounds_error=False,fill_value=0)
@@ -382,6 +362,13 @@ class modhis(hispec):
         input: wvs = wavelength in um
     
         output: FEI common throughput
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+
+        file: official MODHIS FEI common throuhhput, source: Garreth Ruane, date: Jun 29, 2023. 
+        
         """
         feicom_data =np.genfromtxt(datadir + '/throughput/feicom_throughput_modhis.csv', delimiter=',', skip_header=1)
         f_feicom=interpolate.interp1d(feicom_data[:, 0], feicom_data[:, 1], bounds_error=False,fill_value=0)
@@ -395,6 +382,12 @@ class modhis(hispec):
         input: wvs = wavelength in um
     
         output: FEI red throughput
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+
+        file: official MODHIS FEI red throuhhput, source: Garreth Ruane, date: Jun 29, 2023. 
         """
         feired_data =np.genfromtxt(datadir + '/throughput/feired_throughput_modhis.csv', delimiter=',', skip_header=1)
         f_feired=interpolate.interp1d(feired_data[:, 0], feired_data[:, 1], bounds_error=False,fill_value=0)
@@ -408,6 +401,13 @@ class modhis(hispec):
         input: wvs = wavelength in um
     
         output: FEI blue throughput
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+
+        file: official MODHIS FEI blue throuhhput, source: Garreth Ruane, date: Jun 29, 2023.      
+        
         """
         feiblue_data =np.genfromtxt(datadir + '/throughput/feiblue_throughput_modhis.csv', delimiter=',', skip_header=1)
         f_feiblue=interpolate.interp1d(feiblue_data[:, 0], feiblue_data[:, 1], bounds_error=False,fill_value=0)
@@ -421,6 +421,13 @@ class modhis(hispec):
         input: wvs = wavelength in um
     
         output: FIB red throughput
+
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+
+        file: official MODHIS FIB red throuhhput, source: Garreth Ruane, date: Jun 29, 2023. 
+        
         """
         fibred_data =np.genfromtxt(datadir + '/throughput/fibred_throughput_modhis.csv', delimiter=',', skip_header=1)
         f_fibred=interpolate.interp1d(fibred_data[:, 0], fibred_data[:, 1], bounds_error=False,fill_value=0)
@@ -434,6 +441,13 @@ class modhis(hispec):
         input: wvs = wavelength in um
     
         output: FIB blue throughput
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+
+        file: official MODHIS FIB red throuhhput, source: Garreth Ruane, date: Jun 29, 2023. 
+        
         """
         fibblue_data =np.genfromtxt(datadir + '/throughput/fibblue_throughput_modhis.csv', delimiter=',', skip_header=1)
         f_fibblue=interpolate.interp1d(fibblue_data[:, 0], fibblue_data[:, 1], bounds_error=False,fill_value=0)
@@ -447,6 +461,13 @@ class modhis(hispec):
         input: wvs = wavelength in um
     
         output: BSPEC throughput
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+
+        file: official MODHIS BSPEC throuhhput, source: Garreth Ruane, date: Jun 29, 2023. 
+        
         """
         bspec_data =np.genfromtxt(datadir + '/throughput/bspec_throughput_modhis.csv', delimiter=',', skip_header=1)
         f_bspec=interpolate.interp1d(bspec_data[:, 0], bspec_data[:, 1], bounds_error=False,fill_value=0)
@@ -460,6 +481,13 @@ class modhis(hispec):
         input: wvs = wavelength in um
     
         output: RSPEC throughput
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+
+        file: official MODHIS RSPEC throuhhput, source: Garreth Ruane, date: Jun 29, 2023. 
+        
         """
         rspec_data =np.genfromtxt(datadir + '/throughput/rspec_throughput_modhis.csv', delimiter=',', skip_header=1)
         f_rspec=interpolate.interp1d(rspec_data[:, 0], rspec_data[:, 1], bounds_error=False,fill_value=0)
@@ -467,16 +495,22 @@ class modhis(hispec):
         
         return rspec_th
     
-    def pick_coupling(self,w,factor_0,teff,ttStatic=0,LO=10,PLon=1,piaa_boost=1.3,points=None,values=None,atm=0,adc=0):
+    def pick_coupling(self,w,ttStatic=0,LO=10,PLon=1,piaa_boost=1.3,points=None,values=None,atm=0,adc=0):
         """
         select correct coupling file
         to do:implement interpolation of coupling files instead of rounding variables
+        
+        Huihao Zhang (zhang.12043@osu.edu)
+        
+        Based on function "pick_coupling" in specsim (https://github.com/ashbake/specsim/blob/main/utils/throughput_tools.py)
+
         """
         out = self.grid_interp_coupling(int(PLon),atm=int(atm),adc=int(adc))
         grid_points, grid_values = out[0],out[1:] #if PL, three values
         points=grid_points
         values=grid_values
-        dynwfe, ttDynamic= self.ao_coupling(factor_0,teff)
+        dynwfe= self.ao_ho_wfe
+        ttDynamic= self.ao_tt_dynamic
 
         PLon = int(PLon)
         waves = (w.value).copy()
@@ -522,16 +556,24 @@ class modhis(hispec):
         ho_strehl =  np.exp(-(2*np.pi*dynwfe/waves)**2) # computed per wavelength as grid
         coupling  = raw_coupling * piaa_boost * ho_strehl
 
-        return coupling, ho_strehl
-    
-    def grid_interp_coupling(self,PLon=1,path='/Users/huihaoz/Downloads/psisim-kpic/psisim/data/coupling/',atm=1,adc=1):
+        return coupling
+ 
+    def grid_interp_coupling(self,PLon=1,atm=1,adc=1):
         """
         interpolate coupling files over their various parameters
         PLon: 0 or 1, whether PL is on or not
         path: data path to coupling files
         atm: 0 or 1 - whether gary at atm turned on in sims
         adc: 0 or 1 - whether gary had adc included in sims
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+        
+        Based on function "grid_interp_coupling" in specsim (https://github.com/ashbake/specsim/blob/main/utils/throughput_tools.py)
+        
         """
+        path= datadir+'/coupling/'
         LOs = np.arange(0,125,25)
         ttStatics = np.arange(11)
         ttDynamics = np.arange(0,20.5,0.5)
@@ -563,75 +605,17 @@ class modhis(hispec):
         else:
             return points,values_1
         
-    def ao_coupling(self,factor_0,teff):   
-        ao_mode='LGS_OFF'
-        path='/Users/huihaoz/Downloads/psisim-kpic/psisim/data/aowfe/'
-        f_howfe = pd.read_csv(path+'HOWFE_NFIRAOS.csv',header=[0,1])
-        #ao_modes = f.columns
-        mags_howfe             = f_howfe['mag'].values.T[0]
-        wfes_howfe             = f_howfe[ao_mode].values.T[0]
-        ao_ho_wfe_band= f_howfe[ao_mode].columns[0] # this is the mag band wfe is defined in, must be more readable way..
-        ho_wfe_mag = self.get_band_mag('Johnson',ao_ho_wfe_band,factor_0,teff) # get magnitude of star in appropriate band
-        #ho_wfe_mag = 21 
-        f_howfe          = interpolate.interp1d(mags_howfe,wfes_howfe, bounds_error=False,fill_value=10000)
-        ao_ho_wfe     = float(f_howfe(ho_wfe_mag))
-        f_ttdynamic = pd.read_csv(path+'TTDYNAMIC_NFIRAOS.csv',header=[0,1])
-        #ao_modes_tt  = f.columns # should match howfe..
-        mags_ttdynamic            = f_ttdynamic['mag'].values.T[0]
-        tts_ttdynamic             = f_ttdynamic[ao_mode].values.T[0]
-        ao_ttdynamic_band=f_ttdynamic[ao_mode].columns[0] # this is the mag band wfe is defined in, must be more readable way..			
-        ao_ttdynamic_mag = self.get_band_mag('Johnson',ao_ttdynamic_band,factor_0,teff) # get magnitude of star in appropriate band
-        #ao_ttdynamic_mag = 21  # get magnitude of star in appropriate band
-        f_ttdynamic=  interpolate.interp1d(mags_ttdynamic,tts_ttdynamic, bounds_error=False,fill_value=10000)
-        ao_tt_dynamic     = float(f_ttdynamic(ao_ttdynamic_mag))
-        return ao_ho_wfe, ao_tt_dynamic
-    def get_band_mag(self,family,band,factor_0,teff_s):
-        filter_file    = glob.glob('/Users/huihaoz/Downloads/psisim-kpic/psisim/data/filter_profiles/'  +'*' + family + '*' +band + '.dat')[0]
-        ao_flt_raw, ao_flt_yraw     = np.loadtxt(filter_file).T # nm, transmission out of 1
-        x_ao,y_ao=ao_flt_raw/10, ao_flt_yraw
-        filt_interp  = interpolate.interp1d(x_ao, y_ao, bounds_error=False,fill_value=0)
-        dl_l_ao         = np.mean(self.integrate(x_ao,y_ao)/x_ao) # dlambda/lambda to account for spectral fraction
-    #    vraw,sraw = load_phoenix(stel_file,wav_start=np.min(x_ao), wav_end=np.max(x_ao))
-        # load stellar the multiply by scaling factor, factor_0, and filter. integrate
-    #    if (np.min(x) < so.inst.l0) or (np.max(x) > so.inst.l1):
-    #        if so.stel.model=='phoenix':
-    #            vraw,sraw = load_phoenix(so.stel.stel_file,wav_start=np.min(x), wav_end=np.max(x)) #phot/m2/s/nm
-    #        elif so.stel.model=='sonora':
-    #            vraw,sraw = load_sonora(so.stel.stel_file,wav_start=np.min(x), wav_end=np.max(x)) #phot/m2/s/nm
-    #    else:
-    #        vraw,sraw = so.stel.vraw, so.stel.sraw
-        if teff_s.value < 2300: # sonora models arent sampled as well so use phoenix as low as can
-            g    = '316' # mks units, np.log10(316 * 100)=4.5 to match what im holding for phoenix models.
-            teff = str(int(teff_s.value))
-            stel_file         = '/Users/huihaoz/Downloads/psisim-kpic/scr3/dmawet/ETC/sonora/' + 'sp_t%sg%snc_m0.0' %(teff,g)
-            vraw,sraw = self.load_sonora(stel_file,wav_start=np.min(x_ao), wav_end=np.max(x_ao))
 
-        else:
-            teff = str(int(teff_s.value)).zfill(5)
-            stel_file         = '/Users/huihaoz/Downloads/psisim-kpic/scr3/dmawet/ETC/HIResFITS_lib/phoenix.astro.physik.uni-goettingen.de/HIResFITS/PHOENIX-ACES-AGSS-COND-2011/Z-0.0/' + 'lte%s-4.50-0.0.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'%(teff)
-            vraw,sraw = self.load_phoenix(stel_file,wav_start=np.min(x_ao), wav_end=np.max(x_ao))
 
-        filtered_stel = factor_0 * sraw * filt_interp(vraw)
-        flux = self.integrate(vraw,filtered_stel)    #phot/m2/s
-
-        phot_per_s_m2_per_Jy = 1.51*10**7 # convert to phot/s/m2 from Jansky
-
-        flux_Jy = flux/phot_per_s_m2_per_Jy/dl_l_ao
-
-        # get zps
-    #zps                     = np.loadtxt(so.filt.zp_file,dtype=str).T
-    #izp                     = np.where((zps[0]==family) & (zps[1]==band))[0]
-    #zp                      = float(zps[2][izp])
-
-        zps_ao                     = np.loadtxt('/Users/huihaoz/Downloads/psisim-kpic/psisim/data/filter_profiles/zeropoints.txt',dtype=str).T
-        izp_ao                     = np.where((zps_ao[0]==family) & (zps_ao[1]==band))[0]
-        zp_ao                 = float(zps_ao[2][izp_ao])
-        mag_ho_wfe = -2.5*np.log10(flux_Jy/zp_ao)
-        return  mag_ho_wfe
     
     def integrate(self,x,y):
         """
         Integrate y wrt x
+        
+        Huihao Zhang (zhang.12043@osu.edu)
+        
+        Based on function "integrate" in specsim (https://github.com/ashbake/specsim/blob/main/utils/functions.py)
+        
         """
         return trapz(y,x=x)
     
@@ -646,6 +630,13 @@ class modhis(hispec):
 
         convert s from egs/s/cm2/cm to phot/cm2/s/nm using
         https://hea-www.harvard.edu/~pgreen/figs/Conversions.pdf
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+        
+        Based on function "load_phoenix" in specsim (https://github.com/ashbake/specsim/blob/main/utils/load_inputs.py)
+        
         """
 
         # conversion factor
@@ -670,6 +661,7 @@ class modhis(hispec):
 
         # Convert 
         return lam[isub]/10.0,spec[isub] * 10 * 100**2 #nm, phot/m2/s/nm
+    
     def load_sonora(self,stelname,wav_start=750,wav_end=780):
         """
         load sonora model file
@@ -682,6 +674,13 @@ class modhis(hispec):
         https://hea-www.harvard.edu/~pgreen/figs/Conversions.pdf
 
         wavelenght loaded is microns high to low
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+        
+        Based on function "load_sonora" in specsim (https://github.com/ashbake/specsim/blob/main/utils/load_inputs.py)
+        
         """
         f = np.loadtxt(stelname,skiprows=2)
 
@@ -696,9 +695,83 @@ class modhis(hispec):
         isub = np.where( (lam > wav_start*10.0) & (lam < wav_end*10.0))[0]
 
         return lam[isub]/10.0,spec[isub] * 10 * 100**2 #nm, phot/m2/s/nm (my fave)
-##
+    
+    def get_inst_emissivity(self,wvs):
+        '''
+        The instrument emissivity
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+        '''
+        # SR should not be included in emissivity, so will divide from throughput
+        coupling = self.pick_coupling(w=wvs)
+        if self.mode == 'vfn':
+            coupling = np.ones(coupling.shape)
+
+        # TODO: do we want to use the throughput w/ or w/o the planet losses?
+        return (1-self.get_inst_throughput_newao(wvs) / coupling)
+
+    def get_fei_emissivity(self,wvs):
+        
+        """
+        
+        Note that for PSIsim, the FEI throughput included AO throughput
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+        
+        """
+        th_ao = self.get_ao_throughput(wvs)
+        th_feicom = self.get_feicom_throughput(wvs)
+        th_feired = self.get_feired_throughput(wvs)
+        th_feiblue = self.get_feiblue_throughput(wvs)
+        
+        fei_tot_throughput_red = th_feicom * th_feired 
+        fei_tot_throughput_blue = th_feicom * th_feiblue 
+        
+        red_range_index = np.where(wvs.value>1.4)
+        blue_range_index = np.where((wvs.value<=1.4))
+        
+        fei_tot_throughput = np.concatenate([fei_tot_throughput_blue[blue_range_index],fei_tot_throughput_red[red_range_index]])
+        return (1 - fei_tot_throughput * th_ao )
+
+    def get_fiber_emissivity(self, wvs):
+        """
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+        
+        """
+        th_fibred = self.get_fibred_throughput(wvs)
+        th_fibblue = self.get_fibblue_throughput(wvs)
+        
+        red_range_index = np.where(wvs.value>1.4)
+        blue_range_index = np.where((wvs.value<=1.4))
+        
+        fiber_tot_base_throughput = np.concatenate([th_fibblue[blue_range_index],th_fibred[red_range_index]])
+    
+        return (1 - fiber_tot_base_throughput)
+    
     def get_spec_emissivity(self, wvs):
-        return (1 - self.get_spec_throughput(wvs))
+        """
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
+        
+        """
+                
+        th_rspec = self.get_rspec_throughput(wvs)
+        th_bspec = self.get_bspec_throughput(wvs)
+        
+        red_range_index = np.where(wvs.value>1.4)
+        blue_range_index = np.where((wvs.value<=1.4))
+        
+        spec_tot_throughput = np.concatenate([th_bspec[blue_range_index],th_rspec[red_range_index]])
+    
+        return (1 - spec_tot_throughput)
+####
 
 
     def get_instrument_background(self,wvs,solidangle):
