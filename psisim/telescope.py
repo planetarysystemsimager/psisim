@@ -197,28 +197,9 @@ class TMT(Telescope):
 
         return sky_trans_interp
 
-    def get_telescope_throughput(self,wvs,band="TwoMass-J"):
-        '''
-        Get Telescope throughput for a given observing band.  
 
-        Currently only Y,TwoMASS-J,TwoMASS-H and TwoMASS-K are supported, otherwise 0.91 is returned. 
-
-        Args:
-            band (str): A photometric band. 
-        
-        '''
-        # From Dimitri's Code
-        #throughput = {"CFHT-Y":0.91,"TwoMASS-J":0.91,"TwoMASS-H":0.91,"TwoMASS-K":0.91}.get(band,0.91)
-        dust_th = 0.98
-        oxydized_al_data = np.genfromtxt(datadir+'/throughput/protected_ag.csv', delimiter=',', skip_header=1)
-        tel_m1_th = np.interp(wvs.value, oxydized_al_data[:, 0], oxydized_al_data[:, 1]) * dust_th
-        tel_m2_th = tel_m1_th
-        tel_m3_th = tel_m1_th
-        throughput = tel_m1_th * tel_m2_th * tel_m3_th
-        
-        return throughput
 ####
-    def get_telescope_throughput_newao(self,wvs):   
+    def get_telescope_throughput(self,wvs):   
 
         """
         input: wvs = wavelength in um
@@ -237,7 +218,7 @@ class TMT(Telescope):
         
         return tel_th
 ####    
-    def get_telescope_emissivity(self,wvs,band="TwoMass-J"):
+    def get_telescope_emissivity(self,wvs):
         '''
         Get Telescope emissivity for a given observing band. 
 
@@ -248,11 +229,11 @@ class TMT(Telescope):
         
         '''
         
-        emissivity = 1-self.get_telescope_throughput(wvs,band=band)
+        emissivity = 1-self.get_telescope_throughput(wvs)
 
         return emissivity
     
-    def get_thermal_emission(self,wvs,band="TwoMass-J"):
+    def get_thermal_emission(self,wvs):
         '''
         The telescope emission as a function of wavelength
 
@@ -268,7 +249,7 @@ class TMT(Telescope):
         thermal_emission *= solidangle
         thermal_emission = thermal_emission.to(u.ph/(u.s * u.cm**2 * u.AA),equivalencies=u.spectral_density(wvs))
 
-        thermal_emission *= self.get_telescope_emissivity(wvs,band=band)
+        thermal_emission *= self.get_telescope_emissivity(wvs)
 
         return thermal_emission
 
@@ -349,7 +330,7 @@ class Keck(Telescope):
 
         return sky_trans_interp
 ####
-    def get_telescope_throughput_newao(self,wvs):   
+    def get_telescope_throughput(self,wvs):   
 
         """
         input: wvs = wavelength in um
@@ -369,27 +350,8 @@ class Keck(Telescope):
         
         return tel_th
 #### 
-
-    def get_telescope_throughput(self,wvs,band="TwoMass-J"):
-        '''
-        Get Telescope throughput by wavelength from throughput budget.
-
-        Band no longer needed.
-
-        Args:
-            band (str): A photometric band.
-        '''
-        wave = wvs.to(u.um).value
-        oxydized_al_data = np.genfromtxt(datadir+'/throughput/oxydized_al.csv', delimiter=',', skip_header=1)
-        tel_m1_th = np.interp(wave,oxydized_al_data[:,0],oxydized_al_data[:,1])
-        tel_m2_th = tel_m1_th
-        tel_m3_th = tel_m1_th
-        tel_th = tel_m1_th * tel_m2_th * tel_m3_th
-        tel_em = (1-tel_th)
-
-        return tel_th
     
-    def get_telescope_emissivity(self,wvs,band="TwoMass-J"):
+    def get_telescope_emissivity(self,wvs):
         '''
         Get Telescope emissivity for a given observing band. 
 
@@ -399,11 +361,11 @@ class Keck(Telescope):
             band (str): A photometric band.
         '''
         
-        emissivity = 1-self.get_telescope_throughput(wvs,band=band)
+        emissivity = 1-self.get_telescope_throughput(wvs)
 
         return emissivity
     
-    def get_thermal_emission(self,wvs,band="TwoMass-J"):
+    def get_thermal_emission(self,wvs):
         '''
         The telescope emission as a function of wavelength
 
@@ -419,7 +381,7 @@ class Keck(Telescope):
         thermal_emission *= solidangle
         thermal_emission = thermal_emission.to(u.ph/(u.s * u.cm**2 * u.AA),equivalencies=u.spectral_density(wvs))
 
-        thermal_emission *= self.get_telescope_emissivity(wvs,band=band)
+        thermal_emission *= self.get_telescope_emissivity(wvs)
 
         return thermal_emission
 

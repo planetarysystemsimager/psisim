@@ -1,0 +1,20 @@
+#http://svo2.cab.inta-csic.es/svo/theory/fps3/index.php?mode=browse&gname=Generic&gname2=Johnson_UBVRIJHKL&asttype=
+#Family filter zero-point(Jy)
+Bessel I 2405.28	
+Bessel R 2971.35	
+Bessel V 3579.76
+Johnson U 1564.20
+Johnson B 4023.81
+Johnson V 3562.51
+Johnson R 2814.93
+Johnson I 2282.78
+Johnson J 1571.48
+Johnson H 1014.83
+Johnson K 653.41
+SLOAN uprime_filter 1469.48
+decam y 2107.90
+2mass J 1594.00
+2mass H 1024.00
+2mass K 666.80
+cfht y 2134.91
+Tess red 2486.3

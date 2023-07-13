@@ -166,7 +166,7 @@ class hispec(Instrument):
     
 ####
 
-    def get_inst_throughput_newao(self,wvs,planet_flag=False,planet_sep=None):
+    def get_inst_throughput(self,wvs,planet_flag=False,planet_sep=None):
         '''
         Reads instrument throughput from budget file and interpolates to given wavelengths
         When reading from budget file, accounts for pertinent lines depending on the instrument mode
@@ -595,10 +595,12 @@ class hispec(Instrument):
             coupling = np.ones(coupling.shape)
 
         # TODO: do we want to use the throughput w/ or w/o the planet losses?
-        return (1-self.get_inst_throughput_newao(wvs) / coupling)
+        return (1-self.get_inst_throughput(wvs) / coupling)
 
     def get_fei_emissivity(self,wvs):
         """
+
+        fei emissivity
         
         Note that for PSIsim, the FEI throughput included AO throughput
         
@@ -623,6 +625,8 @@ class hispec(Instrument):
 
     def get_fiber_emissivity(self, wvs):
         """
+
+        fib emissivity
         date of the change: Jun 29, 2023
 
         Huihao Zhang (zhang.12043@osu.edu)
@@ -637,6 +641,7 @@ class hispec(Instrument):
     
     def get_spec_emissivity(self, wvs):
         """
+        spec emissivity
         date of the change: Jun 29, 2023
 
         Huihao Zhang (zhang.12043@osu.edu)
@@ -652,78 +657,87 @@ class hispec(Instrument):
         spec_tot_throughput = np.concatenate([th_bspec[blue_range_index],th_rspec[red_range_index]])
     
         return (1 - spec_tot_throughput)
-####
+    
+    def get_spec_throughput(self, wvs):
+        """
+        spec total throughput
+        date of the change: Jun 29, 2023
 
-    def get_inst_throughput(self,wvs,planet_flag=False,planet_sep=None):
-        '''
-        Reads instrument throughput from budget file and interpolates to the given wavelengths
+        Huihao Zhang (zhang.12043@osu.edu)
         
-        Kwargs:
-        planet_flag     - Boolean denoting if planet-specific separation losses should be accounted for [default False]
-        planet_sep      - [in arcsecond] Float of angular separation at which to determine planet throughput
-        '''
+        """
+        
+        th_rspec = self.get_rspec_throughput(wvs)
+        th_bspec = self.get_bspec_throughput(wvs)
+        
+        red_range_index = np.where(wvs.value>1.4)
+        blue_range_index = np.where((wvs.value<=1.4))
+        
+        spec_tot_throughput = np.concatenate([th_bspec[blue_range_index],th_rspec[red_range_index]])
+    
+        return spec_tot_throughput
+    
+    def compute_SR(self,w,ttStatic=0,LO=30,PLon=1,piaa_boost=1.3,points=None,values=None,atm=1,adc=1):
+        """
+        Strehl ratio
+        select correct coupling file
+        to do:implement interpolation of coupling files instead of rounding variables
+        
+        Huihao Zhang (zhang.12043@osu.edu)
+        
+        Based on function "pick_coupling" in specsim (https://github.com/ashbake/specsim/blob/main/utils/throughput_tools.py)
 
-        if self.current_filter not in self.filters:
-            raise ValueError("Your current filter of {} is not in the available filters: {}".format(self.current_filter,self.filters))
+        """
+        out = self.grid_interp_coupling(int(PLon),atm=int(atm),adc=int(adc))
+        grid_points, grid_values = out[0],out[1:] #if PL, three values
+        points=grid_points
+        values=grid_values
+        dynwfe= self.ao_ho_wfe
+        ttDynamic= self.ao_tt_dynamic
 
-        wave = wvs.to(u.um).value
+        PLon = int(PLon)
+        waves = (w.value).copy()
+        if np.min(waves) > 10:
+            waves/=1000 # convert nm to um
 
-        oxydized_al_data = np.genfromtxt(datadir + '/throughput/oxydized_al.csv', delimiter=',', skip_header=1)
-        FSS99_ag_data = np.genfromtxt(datadir + '/throughput/FSS99_ag.csv', delimiter=',', skip_header=1)
-        opticoat_ag_data = np.genfromtxt(datadir + '/throughput/opticoat_ag.csv', delimiter=',', skip_header=1)
-        kao_shwfsdichroic_data = np.genfromtxt(datadir + '/throughput/kao_shwfsdichroic.csv', delimiter=',', skip_header=1)
+        # check range of each variable
+        if ttStatic > 10 or ttStatic < 0:
+            raise ValueError('ttStatic is out of range, 0-10')
+        if ttDynamic > 20 or ttDynamic < 0:
+            raise ValueError('ttDynamic is out of range, 0-10')
+        if LO > 100 or LO < 0:
+            raise ValueError('LO is out of range,0-100')
+        if PLon >1:
+            raise ValueError('PL is out of range')
 
-        dust_th = 0.97
-        K1_th = np.interp(wave,oxydized_al_data[:,0],oxydized_al_data[:,1]) * dust_th
-        K2_th = np.interp(wave,FSS99_ag_data[:,0],FSS99_ag_data[:,1]) * dust_th
-        K3_th = K1_th
-        TTM_th = np.interp(wave,opticoat_ag_data[:,0],opticoat_ag_data[:,1]) * dust_th
-        OAP1_th = TTM_th
-        DM_th = K2_th
-        OAP2_th = TTM_th
-        SHWFSDICH_th = np.interp(wave,kao_shwfsdichroic_data[:,0],kao_shwfsdichroic_data[:,1]) * dust_th
-        PICKOFF_th = TTM_th
-        KAO_th = K1_th * K2_th * K3_th * TTM_th * OAP1_th * DM_th * OAP2_th * SHWFSDICH_th * PICKOFF_th
-        KAO_em = 1-KAO_th
+        if PLon:
+            values_1,values_2,values_3 = values
+            point = (LO,ttStatic,ttDynamic,waves)
+            mode1 = interpolate.interpn(points, values_1, point,bounds_error=False,fill_value=0) # see example https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.interpn.html#scipy.interpolate.interpn
+            mode2 = interpolate.interpn(points, values_2, point,bounds_error=False,fill_value=0) 
+            mode3 = interpolate.interpn(points, values_3, point,bounds_error=False,fill_value=0) 
 
-        protected_au_data = np.genfromtxt(datadir + '/throughput/protected_au.csv', delimiter=',', skip_header=1)
-
-        PWFSDICH_th = 0.94
-        FM1_th = np.interp(wave,protected_au_data[:,0],protected_au_data[:,1])
-        FOAP1_th = FM1_th
-        ADC_th = 0.9
-        TRACDICH_th = 0.94
-        redbluedich_th = 0.94
-        PIAA_th = 0.99**4
-        injectionlens_th = 0.955
-        HISPECFEI_th = PWFSDICH_th * FM1_th * FOAP1_th * ADC_th * TRACDICH_th * redbluedich_th * PIAA_th*injectionlens_th
-        HISPECFEI_em = 1.0 - HISPECFEI_th
-
-        hispec_fiber_data = np.genfromtxt(datadir + '/throughput/hispec_yjhkfiber.csv', delimiter=',', skip_header=1)
-
-        fiberin_th = 0.99
-        fiberprop_th = np.interp(wave, hispec_fiber_data[:,0],hispec_fiber_data[:,1])
-        fiber_break = 0.98**3
-        fiberout_th = 0.99
-        fiber_th = fiberin_th * fiberprop_th * fiber_break * fiberout_th
-
-        hispec_th = self.get_spec_throughput(wvs)
-
-        if planet_flag:
-            # Get separation-dependent planet throughput
-            th_planet = self.get_planet_throughput(planet_sep, wvs)[0]
+            #PLwav,PLdat = load_photonic_lantern() #transfer matrices input mode--> each SMF
+            #mat = PLdat[10] # use middle one for now
+            #test1 = mode1 * mat[0,0]  + mode2*mat[1,0] + mode3*mat[2,0]
+            #test2 = mode1 * mat[0,1]  + mode2*mat[1,1] + mode3*mat[2,1]
+            #test3 = mode1 * mat[2,2]  + mode2*mat[1,2] + mode3*mat[2,2]
+            # apply only to YJ or make matrix diagonal for HK..map onto same wavelength grid somehow
+            # get coupling
+            losses = np.ones_like(mode1) # due to PL imperfection
+            losses[np.where(waves< 1.400)[0]] = 0.95 # only apply to y band
+            raw_coupling = losses*(mode1+mode2+mode3) # do dumb things for now #0.95 is a recombination loss term 
         else:
-            # Set to 1 to ignore separation effects
-            th_planet = 1
+            values_1= values
+            points, values_1 = grid_interp_coupling(PLon)
+            point = (LO,ttStatic,ttDynamic,waves)
+            raw_coupling = interpolate.interpn(points, values_1, point,bounds_error=False,fill_value=0)
 
-        strehl = self.compute_SR(wvs)
-        diff_keck = 0.6 * 1.4
-        coupling = strehl * diff_keck
+        if np.max(waves) < 10:
+            waves*=1000 # nm to match dynwfe
 
-        th_inst = KAO_th * HISPECFEI_th * fiber_th * hispec_th * coupling * th_planet
-        # th_inst = th_ao * th_fiu * th_fiber * th_planet * th_spec * SR
-
-        return th_inst
+        ho_strehl =  np.exp(-(2*np.pi*dynwfe/waves)**2) # computed per wavelength as grid
+        return ho_strehl
     
     # def get_inst_emissivity(self,wvs):
     #     '''
@@ -733,74 +747,15 @@ class hispec(Instrument):
     #     # TODO: do we want to use the throughput w/ or w/o the planet losses?
     #     return (1-self.get_inst_throughput(wvs))
 
-    def get_spec_throughput(self, wvs):
-        '''
-        The throughput of the spectrograph - different than the throughput of the inst that you get in self.get_inst_throughput. 
-        self.get_inst_throughput includes everything, whereas this is just the spectrograph. 
-        '''
-
-        wave = wvs.to(u.um).value
-
-        protected_au_data = np.genfromtxt(datadir + '/throughput/protected_au.csv', delimiter=',', skip_header=1)
-        echelle_data = np.genfromtxt(datadir + '/throughput/echelle.csv', delimiter=',', skip_header=1)
-        cx_data = np.genfromtxt(datadir + '/throughput/cx.csv', delimiter=',', skip_header=1)
-
-        TMA1_th = (np.interp(wave, protected_au_data[:,0],protected_au_data[:,1]))**3
-        cold_stop = 0.94
-        echelle_th = 0.75 * np.interp(wave,echelle_data[:,0],echelle_data[:,1])#80% max efficiency
-        cx_th = np.interp(wave,cx_data[:,0],cx_data[:,1])
-        FM1_th = np.interp(wave, protected_au_data[:,0],protected_au_data[:,1])
-        TMA2_th = TMA1_th
-        hispec_th = TMA1_th* cold_stop * echelle_th * cx_th *FM1_th * TMA2_th
-
-        return hispec_th
-
     def get_instrument_background(self,wvs,solidangle):
         '''
+
         Returns the instrument background at each wavelength in units of photons/s/Angstrom/arcsecond**2
+        
+        date of the change: Jun 29, 2023
+
+        Huihao Zhang (zhang.12043@osu.edu)
         '''
-
-        wave = wvs.to(u.um).value
-
-        oxydized_al_data = np.genfromtxt(datadir + '/throughput/oxydized_al.csv', delimiter=',', skip_header=1)
-        FSS99_ag_data = np.genfromtxt(datadir + '/throughput/FSS99_ag.csv', delimiter=',', skip_header=1)
-        opticoat_ag_data = np.genfromtxt(datadir + '/throughput/opticoat_ag.csv', delimiter=',', skip_header=1)
-        kao_shwfsdichroic_data = np.genfromtxt(datadir + '/throughput/kao_shwfsdichroic.csv', delimiter=',', skip_header=1)
-
-        dust_th = 0.97
-        K1_th = np.interp(wave,oxydized_al_data[:,0],oxydized_al_data[:,1]) * dust_th
-        K2_th = np.interp(wave,FSS99_ag_data[:,0],FSS99_ag_data[:,1]) * dust_th
-        K3_th = K1_th
-        TTM_th = np.interp(wave,opticoat_ag_data[:,0],opticoat_ag_data[:,1]) * dust_th
-        OAP1_th = TTM_th
-        DM_th = K2_th
-        OAP2_th = TTM_th
-        SHWFSDICH_th = np.interp(wave,kao_shwfsdichroic_data[:,0],kao_shwfsdichroic_data[:,1]) * dust_th
-        PICKOFF_th = TTM_th
-        KAO_th = K1_th * K2_th * K3_th * TTM_th * OAP1_th * DM_th * OAP2_th * SHWFSDICH_th * PICKOFF_th
-        KAO_em = 1-KAO_th
-
-        protected_au_data = np.genfromtxt(datadir + '/throughput/protected_au.csv', delimiter=',', skip_header=1)
-
-        PWFSDICH_th = 0.94
-        FM1_th = np.interp(wave,protected_au_data[:,0],protected_au_data[:,1])
-        FOAP1_th = FM1_th
-        ADC_th = 0.9
-        TRACDICH_th = 0.94
-        redbluedich_th = 0.94
-        PIAA_th = 0.99**4
-        injectionlens_th = 0.955
-        HISPECFEI_th = PWFSDICH_th * FM1_th * FOAP1_th * ADC_th * TRACDICH_th * redbluedich_th * PIAA_th*injectionlens_th
-
-        hispec_fiber_data = np.genfromtxt(datadir + '/throughput/hispec_yjhkfiber.csv', delimiter=',', skip_header=1)
-
-        fiberin_th = 0.99
-        fiberprop_th = np.interp(wave, hispec_fiber_data[:,0],hispec_fiber_data[:,1])
-        fiber_break = 0.98**3
-        fiberout_th = 0.99
-        fiber_th = fiberin_th * fiberprop_th * fiber_break * fiberout_th
-
-        hispec_th = self.get_spec_throughput(wvs)
 
         bb_lam_fei = BlackBody(self.temperature_fei,scale=1.0*u.erg/(u.cm**2*u.AA*u.s*u.sr))
         fei_therm = bb_lam_fei(wvs)
@@ -826,7 +781,7 @@ class hispec(Instrument):
         spec_therm *= self.get_spec_emissivity(wvs)
 
         return fei_therm + fiber_therm + spec_therm
-
+####
     def load_scale_aowfe(self,seeing,airmass,site_median_seeing=0.6):
         '''
         A function that returns ao wavefront errors as a function of rmag
@@ -857,35 +812,6 @@ class hispec(Instrument):
         #     ao_wfe_lgs=ao_wfe[:,3] * np.sqrt((seeing/site_median_seeing * airmass**0.6)**(5./3.))
         return ao_rmag,ao_wfe_ngs*u.nm,ao_wfe_lgs*u.nm
 
-    def compute_SR(self,wave):
-        '''
-        Compute the Strehl ratio given the wavelengths, host magnitude and telescope (which contains observing conditions)
-        '''
-
-        path = self.telescope.path
-
-        #Get the AO WFE as a function of rmag
-        ao_rmag,ao_wfe_ngs,ao_wfe_lgs = self.load_scale_aowfe(self.telescope.seeing,self.telescope.airmass,
-                                            site_median_seeing=self.telescope.median_seeing)
-
-        #We take the minimum wavefront error between natural guide star and laser guide star errors
-        ao_wfe = np.min([np.interp(self.ao_mag,ao_rmag, ao_wfe_ngs).value,np.interp(self.ao_mag,ao_rmag, ao_wfe_lgs).value]) * u.nm
-
-        #Compute the ratio
-        # import pdb; pdb.set_trace()
-        SR = np.array(np.exp(-(2*np.pi*ao_wfe.to(u.micron)/wave)**2))
-
-        if self.mode == 'photonic_lantern':
-            # Include the photonic lantern gain
-            SR_PL_in = np.array([99.99, 92.7, 73.3, 32.3, 19.5, 10.6])/100.0 # From Jovanovic et al. 2017
-            SR_PL_out = np.array([0.5508, 0.5322, 0.5001, 0.4175, 0.3831, 0.3360])/0.96**2 /0.5508 * 0.9 # From Jovanovic et al. 2017
-            SR_boost = SR_PL_out/SR_PL_in # From Jovanovic et al. 2017
-            p = np.polyfit(SR_PL_in[::-1],SR_boost[::-1],4)
-
-            if self.n_ch != None:
-                SR = SR * np.polyval(p,SR)
-
-        return SR
 
     def get_speckle_noise(self,separations,ao_mag,filter,wvs,star_spt,telescope,ao_mag2=None):
         '''
@@ -1006,28 +932,28 @@ class hispec(Instrument):
         
         return th_planet
 
-    def get_dar_coupling_throughput(self, wvs, wvs0=None):
-        """
-        Gets the relative loss in fiber coupling due to DAR (normalized to 1)
-
-        Args:
-            wvs (np.array of float): wavelengths to consider
-            wvs0 (float, optiona): the reference wavelength where fiber coupling is maximized. 
-                                    Assumed to be the mean of the input wavelengths if not passed in
-
-        Returns:
-            np.array of float: the relative loss in throughput in fiber coupling due to DAR (normalized to 1)
-        """
-        if wvs0 is None:
-            wvs0 = np.mean(wvs)
-
-        n = self.telescope.get_nair(wvs)
-        n0 = self.telescope.get_nair(wvs0)
-
-        dar = np.abs(nair.compute_dar(n, n0, np.radians(self.zenith)))
-
-        lam_d = (wvs * u.um) / (self.telescope.diameter.to(u.um)) * 206265 * 1000
-
-        coupling_th = np.interp(dar/lam_d, self.fiber_coupling['sep'], self.fiber_coupling['eta'], right=0)
-
-        return coupling_th
+#    def get_dar_coupling_throughput(self, wvs, wvs0=None):
+#        """
+#        Gets the relative loss in fiber coupling due to DAR (normalized to 1)
+#
+#        Args:
+#            wvs (np.array of float): wavelengths to consider
+#            wvs0 (float, optiona): the reference wavelength where fiber coupling is maximized. 
+#                                    Assumed to be the mean of the input wavelengths if not passed in
+#
+#        Returns:
+#            np.array of float: the relative loss in throughput in fiber coupling due to DAR (normalized to 1)
+#        """
+#        if wvs0 is None:
+#            wvs0 = np.mean(wvs)
+#
+#        n = self.telescope.get_nair(wvs)
+#        n0 = self.telescope.get_nair(wvs0)
+#
+#        dar = np.abs(nair.compute_dar(n, n0, np.radians(self.zenith)))
+#
+#        lam_d = (wvs * u.um) / (self.telescope.diameter.to(u.um)) * 206265 * 1000
+#
+#        coupling_th = np.interp(dar/lam_d, self.fiber_coupling['sep'], self.fiber_coupling['eta'], right=0)
+#
+#        return coupling_th
